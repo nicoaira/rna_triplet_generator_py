@@ -63,14 +63,37 @@ class BulgeGraphUpdater:
         cls, bg: BulgeGraph, node_name: str, left_index: int, right_index: int
     ) -> None:
         """Update graph for a stem pair insertion."""
+        node = bg.elements.get(node_name)
+        original = node.positions.copy() if node is not None else None
+
         if left_index < right_index:
             cls._shift_indices(bg, right_index, 1)
             cls._shift_indices(bg, left_index, 1)
         else:
             cls._shift_indices(bg, left_index, 1)
             cls._shift_indices(bg, right_index, 1)
-        node = bg.elements.get(node_name)
-        if node is not None:
+
+        if node is not None and original and len(original) == 4:
+            l_start, l_end, r_start, r_end = original
+            left_pos = left_index + 1
+            right_pos = right_index + 1
+
+            l_start_new, l_end_new = node.positions[0], node.positions[1]
+            r_start_new, r_end_new = node.positions[2], node.positions[3]
+
+            if left_pos <= l_start:
+                l_start_new = left_pos
+            elif left_pos > l_end:
+                l_end_new = left_pos
+
+            if right_pos >= r_end:
+                r_end_new = right_pos
+            elif right_pos < r_start:
+                r_start_new = right_pos
+
+            node.positions = [l_start_new, l_end_new, r_start_new, r_end_new]
+            cls._recompute_bounds(node)
+        elif node is not None:
             node.positions.extend([left_index + 1, right_index + 1])
             node.positions.sort()
             cls._recompute_bounds(node)
@@ -81,11 +104,30 @@ class BulgeGraphUpdater:
     ) -> None:
         """Update graph for a stem pair deletion."""
         node = bg.elements.get(node_name)
-        if node is not None:
+        original = node.positions.copy() if node is not None else None
+
+        if node is not None and original and len(original) == 4:
+            l_start, l_end, r_start, r_end = original
+            left_pos = left_index + 1
+            right_pos = right_index + 1
+
+            if left_pos == l_start:
+                l_start += 1
+            if left_pos == l_end:
+                l_end -= 1
+            if right_pos == r_start:
+                r_start += 1
+            if right_pos == r_end:
+                r_end -= 1
+
+            node.positions = [l_start, l_end, r_start, r_end]
+            cls._recompute_bounds(node)
+        elif node is not None:
             for pos in (left_index + 1, right_index + 1):
                 if pos in node.positions:
                     node.positions.remove(pos)
             cls._recompute_bounds(node)
+
         if left_index < right_index:
             cls._shift_indices(bg, right_index, -1)
             cls._shift_indices(bg, left_index, -1)
