@@ -67,6 +67,10 @@ class BulgeGraphUpdater:
         orig = None
         if node is not None and len(node.positions) == 4:
             orig = list(node.positions)
+            ls, le, rs, re = orig
+            # Clamp diff-based indices to expected ranges
+            left_index = min(max(left_index, ls - 1), le)
+            right_index = min(max(right_index, rs - 1), re)
 
         if left_index < right_index:
             cls._shift_indices(bg, right_index, 1)
@@ -90,6 +94,9 @@ class BulgeGraphUpdater:
         orig = None
         if node is not None and len(node.positions) == 4:
             orig = list(node.positions)
+            ls, le, rs, re = orig
+            left_index = min(max(left_index, ls - 1), le - 1)
+            right_index = min(max(right_index, rs - 1), re - 1)
 
         if left_index < right_index:
             cls._shift_indices(bg, left_index, -1)
@@ -112,6 +119,23 @@ class BulgeGraphUpdater:
             while f"s{i}" in bg.elements:
                 bg.elements[f"s{i-1}"] = bg.elements.pop(f"s{i}")
                 i += 1
+
+            # Merge adjacent internal loops when possible
+            left_name = f"i{index-2}"
+            right_name = f"i{index-1}"
+            left_loop = bg.elements.get(left_name)
+            right_loop = bg.elements.get(right_name)
+            if left_loop and right_loop:
+                merged = sorted(set(left_loop.positions + right_loop.positions))
+                if len(merged) > 2:
+                    merged = [merged[0], merged[-1]]
+                left_loop.positions = merged
+                cls._recompute_bounds(left_loop)
+                del bg.elements[right_name]
+                j = index
+                while f"i{j}" in bg.elements:
+                    bg.elements[f"i{j-1}"] = bg.elements.pop(f"i{j}")
+                    j += 1
         else:
             node.positions = [ls, le - 1, rs - 1, re - 2]
             node.start = node.positions[0]
