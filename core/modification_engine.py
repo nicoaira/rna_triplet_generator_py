@@ -128,12 +128,8 @@ class ModificationEngine:
             logger.debug(self._format_bulge_graph_summary(bulge_graph, pos_seq, pos_struct))
             
             new_seq, new_struct = self._modify_stems(pos_seq, pos_struct, bulge_graph)
-            
-            # Re-parse the bulge graph after modification
-            from .rna_generator import BulgeGraphParser
-            parser = BulgeGraphParser()
-            bulge_graph = parser.parse_structure(new_struct)
-            
+
+            # Bulge graph updated in place
             pos_seq, pos_struct = new_seq, new_struct
             
             logger.debug(f"After stem modification {i + 1}:")
@@ -147,12 +143,8 @@ class ModificationEngine:
             logger.debug(self._format_bulge_graph_summary(bulge_graph, pos_seq, pos_struct))
             
             new_seq, new_struct = self._modify_loops(pos_seq, pos_struct, bulge_graph, NodeType.HAIRPIN)
-            
-            # Re-parse the bulge graph after modification
-            from .rna_generator import BulgeGraphParser
-            parser = BulgeGraphParser()
-            bulge_graph = parser.parse_structure(new_struct)
-            
+
+            # Bulge graph updated in place
             pos_seq, pos_struct = new_seq, new_struct
             
             logger.debug(f"After hairpin modification {i + 1}:")
@@ -165,12 +157,8 @@ class ModificationEngine:
             logger.debug(self._format_bulge_graph_summary(bulge_graph, pos_seq, pos_struct))
             
             new_seq, new_struct = self._modify_loops(pos_seq, pos_struct, bulge_graph, NodeType.INTERNAL)
-            
-            # Re-parse the bulge graph after modification
-            from .rna_generator import BulgeGraphParser
-            parser = BulgeGraphParser()
-            bulge_graph = parser.parse_structure(new_struct)
-            
+
+            # Bulge graph updated in place
             pos_seq, pos_struct = new_seq, new_struct
             
             logger.debug(f"After internal loop modification {i + 1}:")
@@ -183,12 +171,8 @@ class ModificationEngine:
             logger.debug(self._format_bulge_graph_summary(bulge_graph, pos_seq, pos_struct))
             
             new_seq, new_struct = self._modify_loops(pos_seq, pos_struct, bulge_graph, NodeType.BULGE)
-            
-            # Re-parse the bulge graph after modification
-            from .rna_generator import BulgeGraphParser
-            parser = BulgeGraphParser()
-            bulge_graph = parser.parse_structure(new_struct)
-            
+
+            # Bulge graph updated in place
             pos_seq, pos_struct = new_seq, new_struct
             
             logger.debug(f"After bulge modification {i + 1}:")
@@ -201,12 +185,8 @@ class ModificationEngine:
             logger.debug(self._format_bulge_graph_summary(bulge_graph, pos_seq, pos_struct))
             
             new_seq, new_struct = self._modify_loops(pos_seq, pos_struct, bulge_graph, NodeType.MULTI)
-            
-            # Re-parse the bulge graph after modification
-            from .rna_generator import BulgeGraphParser
-            parser = BulgeGraphParser()
-            bulge_graph = parser.parse_structure(new_struct)
-            
+
+            # Bulge graph updated in place
             pos_seq, pos_struct = new_seq, new_struct
             
             logger.debug(f"After multi loop modification {i + 1}:")
@@ -248,10 +228,10 @@ class ModificationEngine:
         logger.debug(f"Action: {action.value}")
         
         if action == ModificationType.INSERT:
-            sequence, structure = self._insert_stem_pair(sequence, structure, coords)
+            sequence, structure = self._insert_stem_pair(sequence, structure, node_name, coords, bulge_graph)
             logger.debug("Inserted complementary base pair in stem")
         elif action == ModificationType.DELETE:
-            sequence, structure = self._delete_stem_pair(sequence, structure, coords)
+            sequence, structure = self._delete_stem_pair(sequence, structure, node_name, coords, bulge_graph)
             logger.debug("Deleted complementary base pair from stem")
         
         self.modification_counts[node_name] = self.modification_counts.get(node_name, 0) + 1
@@ -293,10 +273,10 @@ class ModificationEngine:
         logger.debug(f"Action: {action.value}")
         
         if action == ModificationType.INSERT:
-            sequence, structure = self._insert_loop_base(sequence, structure, coords)
+            sequence, structure = self._insert_loop_base(sequence, structure, node_name, coords, bulge_graph)
             logger.debug(f"Inserted base in {node_type.value}")
         elif action == ModificationType.DELETE:
-            sequence, structure = self._delete_loop_base(sequence, structure, coords, min_size)
+            sequence, structure = self._delete_loop_base(sequence, structure, node_name, coords, min_size, bulge_graph)
             logger.debug(f"Deleted base from {node_type.value}")
         
         self.modification_counts[node_name] = self.modification_counts.get(node_name, 0) + 1
@@ -361,7 +341,8 @@ class ModificationEngine:
         self.node_actions[node_name] = action
         return action
     
-    def _insert_stem_pair(self, sequence: str, structure: str, coords: List[int]) -> Tuple[str, str]:
+    def _insert_stem_pair(self, sequence: str, structure: str, node_name: str,
+                          coords: List[int], bulge_graph: BulgeGraph) -> Tuple[str, str]:
         """Insert a complementary base pair in a stem at random positions."""
         if len(coords) < 2:
             return sequence, structure
@@ -434,10 +415,15 @@ class ModificationEngine:
             structure = structure[:left_pos] + '(' + structure[left_pos:]
             sequence = sequence[:right_pos] + base_right + sequence[right_pos:]
             structure = structure[:right_pos] + ')' + structure[right_pos:]
-        
+
+        # Update bulge graph indices
+        from .bulge_graph_updater import BulgeGraphUpdater
+        BulgeGraphUpdater.insert_stem_pair(bulge_graph, node_name, left_pos, right_pos)
+
         return sequence, structure
     
-    def _delete_stem_pair(self, sequence: str, structure: str, coords: List[int]) -> Tuple[str, str]:
+    def _delete_stem_pair(self, sequence: str, structure: str, node_name: str,
+                          coords: List[int], bulge_graph: BulgeGraph) -> Tuple[str, str]:
         """Delete a complementary base pair from a stem at random positions."""
         if len(coords) < 4:  # Need at least 4 bases to safely delete a pair
             return sequence, structure
@@ -475,10 +461,15 @@ class ModificationEngine:
             structure = structure[:left_pos] + structure[left_pos+1:]
             sequence = sequence[:right_pos] + sequence[right_pos+1:]
             structure = structure[:right_pos] + structure[right_pos+1:]
-        
+
+        # Update bulge graph indices
+        from .bulge_graph_updater import BulgeGraphUpdater
+        BulgeGraphUpdater.delete_stem_pair(bulge_graph, node_name, left_pos, right_pos)
+
         return sequence, structure
     
-    def _insert_loop_base(self, sequence: str, structure: str, coords: List[int]) -> Tuple[str, str]:
+    def _insert_loop_base(self, sequence: str, structure: str, node_name: str,
+                          coords: List[int], bulge_graph: BulgeGraph) -> Tuple[str, str]:
         """Insert a base in a loop region."""
         if not coords:
             return sequence, structure
@@ -490,10 +481,14 @@ class ModificationEngine:
         base = random.choice(['A', 'C', 'G', 'U'])
         sequence = sequence[:pos] + base + sequence[pos:]
         structure = structure[:pos] + '.' + structure[pos:]
-        
+
+        from .bulge_graph_updater import BulgeGraphUpdater
+        BulgeGraphUpdater.insert_loop_base(bulge_graph, node_name, pos)
+
         return sequence, structure
     
-    def _delete_loop_base(self, sequence: str, structure: str, coords: List[int], min_size: int) -> Tuple[str, str]:
+    def _delete_loop_base(self, sequence: str, structure: str, node_name: str,
+                          coords: List[int], min_size: int, bulge_graph: BulgeGraph) -> Tuple[str, str]:
         """Delete a base from a loop region."""
         if len(coords) <= min_size or not coords:
             return sequence, structure
@@ -504,7 +499,9 @@ class ModificationEngine:
         if pos < len(sequence):
             sequence = sequence[:pos] + sequence[pos+1:]
             structure = structure[:pos] + structure[pos+1:]
-        
+            from .bulge_graph_updater import BulgeGraphUpdater
+            BulgeGraphUpdater.delete_loop_base(bulge_graph, node_name, pos)
+
         return sequence, structure
     
     def _calculate_modification_counts(self, bulge_graph: BulgeGraph) -> ModificationCounts:
