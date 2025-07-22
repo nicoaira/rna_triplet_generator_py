@@ -23,6 +23,8 @@ class ModificationEngine:
         self.args = args
         self.modification_counts = {}
         self.node_actions = {}
+        # Track counts by structural element type as modifications are applied
+        self.type_mod_counts = ModificationCounts()
     
     def _format_bulge_graph_summary(self, bulge_graph: BulgeGraph, sequence: str, structure: str) -> str:
         """Format a detailed summary of the bulge graph state with nodes sorted by first coordinate."""
@@ -102,6 +104,8 @@ class ModificationEngine:
         pos_struct = structure
         self.modification_counts = {}
         self.node_actions = {}
+        # Reset type-based modification counters
+        self.type_mod_counts = ModificationCounts()
         
         # Normalize modification counts if enabled
         if self.args.mod_normalization:
@@ -233,8 +237,10 @@ class ModificationEngine:
         elif action == ModificationType.DELETE:
             sequence, structure = self._delete_stem_pair(sequence, structure, node_name, coords, bulge_graph)
             logger.debug("Deleted complementary base pair from stem")
-        
+
         self.modification_counts[node_name] = self.modification_counts.get(node_name, 0) + 1
+        # Record modification at the stem level
+        self.type_mod_counts.stem += 1
         return sequence, structure
     
     def _modify_loops(self, sequence: str, structure: str, bulge_graph: BulgeGraph, 
@@ -278,8 +284,17 @@ class ModificationEngine:
         elif action == ModificationType.DELETE:
             sequence, structure = self._delete_loop_base(sequence, structure, node_name, coords, min_size, bulge_graph)
             logger.debug(f"Deleted base from {node_type.value}")
-        
+
         self.modification_counts[node_name] = self.modification_counts.get(node_name, 0) + 1
+        # Record modification count for the loop type
+        if node_type == NodeType.HAIRPIN:
+            self.type_mod_counts.hloop += 1
+        elif node_type == NodeType.INTERNAL:
+            self.type_mod_counts.iloop += 1
+        elif node_type == NodeType.BULGE:
+            self.type_mod_counts.bulge += 1
+        elif node_type == NodeType.MULTI:
+            self.type_mod_counts.mloop += 1
         return sequence, structure
     
     def _get_eligible_nodes(self, bulge_graph: BulgeGraph, node_type: NodeType,
@@ -505,25 +520,15 @@ class ModificationEngine:
         return sequence, structure
     
     def _calculate_modification_counts(self, bulge_graph: BulgeGraph) -> ModificationCounts:
-        """Calculate modification counts by structural element type."""
-        counts = ModificationCounts()
-        node_mapping = bulge_graph.node_mapping()
-        
-        for node_name, count in self.modification_counts.items():
-            if node_name in node_mapping:
-                coords = node_mapping[node_name]
-                node_type = classify_node(node_name, coords)
-                
-                if node_type == NodeType.STEM:
-                    counts.stem += count
-                elif node_type == NodeType.HAIRPIN:
-                    counts.hloop += count
-                elif node_type == NodeType.INTERNAL:
-                    counts.iloop += count
-                elif node_type == NodeType.BULGE:
-                    counts.bulge += count
-                elif node_type == NodeType.MULTI:
-                    counts.mloop += count
-        
-        counts.total = sum(self.modification_counts.values())
+        """Return modification counts accumulated during modifications."""
+        counts = ModificationCounts(
+            stem=self.type_mod_counts.stem,
+            hloop=self.type_mod_counts.hloop,
+            iloop=self.type_mod_counts.iloop,
+            bulge=self.type_mod_counts.bulge,
+            mloop=self.type_mod_counts.mloop,
+        )
+        counts.total = (
+            counts.stem + counts.hloop + counts.iloop + counts.bulge + counts.mloop
+        )
         return counts
