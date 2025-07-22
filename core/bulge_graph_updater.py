@@ -53,9 +53,39 @@ class BulgeGraphUpdater:
     ) -> None:
         """Update graph for a loop base deletion."""
         node = bg.elements.get(node_name)
-        if node is not None and (index + 1) in node.positions:
-            node.positions.remove(index + 1)
-            cls._recompute_bounds(node)
+        if node is not None:
+            coord = index + 1
+            # When a loop node only stores two coordinates it represents a
+            # start/end range rather than explicit positions.  For these nodes
+            # we update the bounds while keeping the two-coordinate
+            # representation.
+            if len(node.positions) == 2:
+                start, end = node.positions
+                if start <= coord <= end:
+                    if coord == start:
+                        start += 1
+                    else:
+                        end -= 1
+                node.positions = [start, end]
+                cls._recompute_bounds(node)
+            elif len(node.positions) == 4:
+                ls, le, rs, re = node.positions
+                if ls <= coord <= le:
+                    if coord == ls:
+                        ls += 1
+                    else:
+                        le -= 1
+                elif rs <= coord <= re:
+                    if coord == rs:
+                        rs += 1
+                    else:
+                        re -= 1
+                node.positions = [ls, le, rs, re]
+                cls._recompute_bounds(node)
+            elif coord in node.positions:
+                node.positions.remove(coord)
+                cls._recompute_bounds(node)
+
         cls._shift_indices(bg, index, -1)
 
     @classmethod
