@@ -51,12 +51,77 @@ class BulgeGraphUpdater:
     def delete_loop_base(
         cls, bg: BulgeGraph, node_name: str, index: int
     ) -> None:
-        """Update graph for a loop base deletion."""
+        """Update graph for a loop base deletion.
+
+        ``BulgeGraph`` nodes often store only the start and end coordinates of
+        a loop (e.g. hairpins, bulges or multiloops).  When a base inside such a
+        loop is removed we need to shrink the loop while keeping the start/end
+        representation consistent.  This helper therefore expands two/"four"
+        coordinate representations to explicit ranges, removes the deleted base,
+        applies the global coordinate shift and then converts the positions back
+        to the condensed form used by ``forgi``.
+        """
+
         node = bg.elements.get(node_name)
-        if node is not None and (index + 1) in node.positions:
-            node.positions.remove(index + 1)
-            cls._recompute_bounds(node)
+        pos = index + 1
+
+        if node is not None:
+            original = list(node.positions)
+
+            # Expand start/end style representations so we can operate on
+            # explicit coordinates.
+            if len(original) == 2:
+                expanded = list(range(original[0], original[1] + 1))
+            elif len(original) == 4:
+                ls, le, rs, re = original
+                expanded = list(range(ls, le + 1)) + list(range(rs, re + 1))
+                left_size_orig = le - ls + 1
+                right_size_orig = re - rs + 1
+            else:
+                expanded = original.copy()
+
+            if pos in expanded:
+                expanded.remove(pos)
+
+            # Temporarily assign the expanded list so that the subsequent shift
+            # operation updates this node along with all others.
+            node.positions = expanded
+
+        # Shift coordinates for all nodes, including the modified one.
         cls._shift_indices(bg, index, -1)
+
+        if node is not None:
+            updated = sorted(node.positions)
+
+            if len(original) == 2:
+                node.positions = [updated[0], updated[-1]] if updated else []
+            elif len(original) == 4:
+                # Determine the length of each side from the original coords
+                ls, le, rs, re = original
+                left_len = left_size_orig
+                right_len = right_size_orig
+
+                # Adjust expected lengths depending on which side lost a base
+                if ls <= pos <= le:
+                    left_len -= 1
+                elif rs <= pos <= re:
+                    right_len -= 1
+
+                left = updated[:left_len]
+                right = updated[left_len:left_len + right_len]
+
+                if left and right:
+                    node.positions = [left[0], left[-1], right[0], right[-1]]
+                elif left:
+                    node.positions = [left[0], left[-1]]
+                elif right:
+                    node.positions = [right[0], right[-1]]
+                else:
+                    node.positions = []
+            else:
+                node.positions = updated
+
+            cls._recompute_bounds(node)
 
     @classmethod
     def insert_stem_pair(
