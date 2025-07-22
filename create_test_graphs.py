@@ -91,6 +91,49 @@ def create_forgi_bulge_graph(structure: str, sequence: str = None) -> Dict[str, 
         return {}
 
 
+def would_deletion_cause_disappearance(node_type: NodeType, coords: List[int], action: ModificationType) -> bool:
+    """
+    Check if a deletion operation would cause a structural element to disappear.
+    
+    Args:
+        node_type: Type of the node (STEM, HAIRPIN, etc.)
+        coords: Coordinates of the node
+        action: The modification action
+        
+    Returns:
+        True if deletion would cause disappearance, False otherwise
+    """
+    if action != ModificationType.DELETE:
+        return False
+    
+    # Skip deletion of stems with length 1 to avoid forgi renaming issues
+    if (node_type == NodeType.STEM and len(coords) == 4 and 
+        coords[0] == coords[1] and coords[2] == coords[3]):
+        return True
+    
+    # Skip deletion of hairpins, multiloops, or bulges with only 2 equal coordinates
+    if node_type in [NodeType.HAIRPIN, NodeType.MULTI, NodeType.BULGE]:
+        if len(coords) == 2 and coords[0] == coords[1]:
+            return True
+    
+    # Skip deletion of internal loops where either side has length 1
+    if node_type == NodeType.INTERNAL:
+        if len(coords) == 4:
+            left_side_length = coords[1] - coords[0] + 1
+            right_side_length = coords[3] - coords[2] + 1
+            if left_side_length == 1 or right_side_length == 1:
+                return True
+        # Also handle cases where coords might be in different format
+        elif len(coords) >= 2:
+            # Check for any single-position segments
+            unique_coords = sorted(set(coords))
+            for i in range(0, len(unique_coords), 2):
+                if i + 1 < len(unique_coords) and unique_coords[i] == unique_coords[i + 1]:
+                    return True
+    
+    return False
+
+
 def apply_single_modification(sequence: str, structure: str, modification_engine: ModificationEngine, 
                             bulge_graph, target_node_type: NodeType = None) -> Dict[str, Any]:
     """
@@ -155,56 +198,53 @@ def apply_single_modification(sequence: str, structure: str, modification_engine
     if not all_eligible_nodes:
         return None
     
-    # Randomly select from all eligible nodes across all types
-    node_type, node_name, coords, min_size, max_size = random.choice(all_eligible_nodes)
+    # Try to find a valid modification, filtering out problematic deletions
+    max_attempts = len(all_eligible_nodes) * 2  # Allow multiple attempts
     
-    # Choose action (insert or delete)
-    action = modification_engine._choose_action(node_name, len(coords), min_size, max_size)
-    
-    # Skip deletion of stems with length 1 to avoid forgi renaming issues
-    if (node_type == NodeType.STEM and action == ModificationType.DELETE and 
-        len(coords) == 4 and coords[0] == coords[1] and coords[2] == coords[3]):
-        logging.debug(f"Skipping deletion of length-1 stem {node_name} with coords {coords}")
-        # Try to find another eligible node or action
-        remaining_nodes = [(nt, nn, c, mins, maxs) for nt, nn, c, mins, maxs in all_eligible_nodes 
-                          if not (nt == NodeType.STEM and len(c) == 4 and c[0] == c[1] and c[2] == c[3])]
-        if remaining_nodes:
-            node_type, node_name, coords, min_size, max_size = random.choice(remaining_nodes)
-            action = modification_engine._choose_action(node_name, len(coords), min_size, max_size)
-        else:
-            return None
-    
-    # Apply the modification with correct parameters
-    try:
-        if node_type == NodeType.STEM:
-            if action == ModificationType.INSERT:
-                new_seq, new_struct = modification_engine._insert_stem_pair(sequence, structure, node_name, coords, bulge_graph)
-                action_name = "insert_pair"
-            else:
-                new_seq, new_struct = modification_engine._delete_stem_pair(sequence, structure, node_name, coords, bulge_graph)
-                action_name = "delete_pair"
-        else:
-            if action == ModificationType.INSERT:
-                new_seq, new_struct = modification_engine._insert_loop_base(sequence, structure, node_name, coords, bulge_graph)
-                action_name = "insert"
-            else:
-                new_seq, new_struct = modification_engine._delete_loop_base(sequence, structure, node_name, coords, min_size, bulge_graph)
-                action_name = "delete"
+    for attempt in range(max_attempts):
+        # Randomly select from all eligible nodes across all types
+        node_type, node_name, coords, min_size, max_size = random.choice(all_eligible_nodes)
         
-        # Check if modification actually occurred
-        if new_seq != sequence or new_struct != structure:
-            return {
-                'modified_node': node_name,
-                'node_type': node_type.value,
-                'action': action_name,
-                'new_sequence': new_seq,
-                'new_structure': new_struct,
-                'original_coords': coords,
-            }
-    except Exception as e:
-        logging.debug(f"Failed to apply {action_name} to {node_type.value} {node_name}: {e}")
-        return None
+        # Choose action (insert or delete)
+        action = modification_engine._choose_action(node_name, len(coords), min_size, max_size)
+        
+        # Check if this deletion would cause structural disappearance
+        if would_deletion_cause_disappearance(node_type, coords, action):
+            logging.debug(f"Skipping deletion of {node_type.value} {node_name} with coords {coords} - would cause disappearance")
+            continue
+        
+        # Apply the modification with correct parameters
+        try:
+            if node_type == NodeType.STEM:
+                if action == ModificationType.INSERT:
+                    new_seq, new_struct = modification_engine._insert_stem_pair(sequence, structure, node_name, coords, bulge_graph)
+                    action_name = "insert_pair"
+                else:
+                    new_seq, new_struct = modification_engine._delete_stem_pair(sequence, structure, node_name, coords, bulge_graph)
+                    action_name = "delete_pair"
+            else:
+                if action == ModificationType.INSERT:
+                    new_seq, new_struct = modification_engine._insert_loop_base(sequence, structure, node_name, coords, bulge_graph)
+                    action_name = "insert"
+                else:
+                    new_seq, new_struct = modification_engine._delete_loop_base(sequence, structure, node_name, coords, min_size, bulge_graph)
+                    action_name = "delete"
+            
+            # Check if modification actually occurred
+            if new_seq != sequence or new_struct != structure:
+                return {
+                    'modified_node': node_name,
+                    'node_type': node_type.value,
+                    'action': action_name,
+                    'new_sequence': new_seq,
+                    'new_structure': new_struct,
+                    'original_coords': coords,
+                }
+        except Exception as e:
+            logging.debug(f"Failed to apply {action_name} to {node_type.value} {node_name}: {e}")
+            continue
     
+    logging.debug(f"Could not find valid modification after {max_attempts} attempts")
     return None
 
 
