@@ -63,17 +63,23 @@ class BulgeGraphUpdater:
         cls, bg: BulgeGraph, node_name: str, left_index: int, right_index: int
     ) -> None:
         """Update graph for a stem pair insertion."""
+        node = bg.elements.get(node_name)
+        orig = None
+        if node is not None and len(node.positions) == 4:
+            orig = list(node.positions)
+
         if left_index < right_index:
             cls._shift_indices(bg, right_index, 1)
             cls._shift_indices(bg, left_index, 1)
         else:
             cls._shift_indices(bg, left_index, 1)
             cls._shift_indices(bg, right_index, 1)
-        node = bg.elements.get(node_name)
-        if node is not None:
-            node.positions.extend([left_index + 1, right_index + 1])
-            node.positions.sort()
-            cls._recompute_bounds(node)
+
+        if orig is not None:
+            ls, le, rs, re = orig
+            node.positions = [ls, le + 1, rs + 1, re + 2]
+            node.start = node.positions[0]
+            node.end = node.positions[-1]
 
     @classmethod
     def delete_stem_pair(
@@ -81,14 +87,32 @@ class BulgeGraphUpdater:
     ) -> None:
         """Update graph for a stem pair deletion."""
         node = bg.elements.get(node_name)
-        if node is not None:
-            for pos in (left_index + 1, right_index + 1):
-                if pos in node.positions:
-                    node.positions.remove(pos)
-            cls._recompute_bounds(node)
+        orig = None
+        if node is not None and len(node.positions) == 4:
+            orig = list(node.positions)
+
         if left_index < right_index:
-            cls._shift_indices(bg, right_index, -1)
             cls._shift_indices(bg, left_index, -1)
+            cls._shift_indices(bg, right_index - 1, -1)
         else:
-            cls._shift_indices(bg, left_index, -1)
             cls._shift_indices(bg, right_index, -1)
+            cls._shift_indices(bg, left_index - 1, -1)
+
+        if node is None or orig is None:
+            return
+
+        ls, le, rs, re = orig
+        is_single = ls == le and rs == re
+
+        if is_single:
+            # Remove the stem and renumber subsequent stems
+            index = int(node_name[1:])
+            del bg.elements[node_name]
+            i = index + 1
+            while f"s{i}" in bg.elements:
+                bg.elements[f"s{i-1}"] = bg.elements.pop(f"s{i}")
+                i += 1
+        else:
+            node.positions = [ls, le - 1, rs - 1, re - 2]
+            node.start = node.positions[0]
+            node.end = node.positions[-1]
