@@ -108,10 +108,16 @@ def apply_single_modification(sequence: str, structure: str, modification_engine
     """
     # Get eligible nodes for modification
     all_node_types = [NodeType.STEM, NodeType.HAIRPIN, NodeType.INTERNAL, NodeType.BULGE, NodeType.MULTI]
+    
     if target_node_type:
         node_types_to_try = [target_node_type]
     else:
-        node_types_to_try = all_node_types
+        # Randomize the order of node types to ensure balanced distribution
+        node_types_to_try = all_node_types.copy()
+        random.shuffle(node_types_to_try)
+    
+    # Collect all eligible nodes from all types first
+    all_eligible_nodes = []
     
     for node_type in node_types_to_try:
         # Get size constraints based on node type
@@ -142,22 +148,34 @@ def apply_single_modification(sequence: str, structure: str, modification_engine
         eligible_nodes = modification_engine._get_eligible_nodes(bulge_graph, node_type, 
                                                                min_size, max_size, max_mods)
         
-        if not eligible_nodes:
-            continue
-        
-        # Select a random eligible node
-        node_name, coords = random.choice(eligible_nodes)
-        
-        # Choose action (insert or delete)
-        action = modification_engine._choose_action(node_name, len(coords), min_size, max_size)
-        
-        # Skip deletion of stems with length 1 to avoid forgi renaming issues
-        if (node_type == NodeType.STEM and action == ModificationType.DELETE and 
-            len(coords) == 4 and coords[0] == coords[1] and coords[2] == coords[3]):
-            logging.debug(f"Skipping deletion of length-1 stem {node_name} with coords {coords}")
-            continue
-        
-        # Apply the modification with correct parameters
+        # Add node type info to each eligible node
+        for node_name, coords in eligible_nodes:
+            all_eligible_nodes.append((node_type, node_name, coords, min_size, max_size))
+    
+    if not all_eligible_nodes:
+        return None
+    
+    # Randomly select from all eligible nodes across all types
+    node_type, node_name, coords, min_size, max_size = random.choice(all_eligible_nodes)
+    
+    # Choose action (insert or delete)
+    action = modification_engine._choose_action(node_name, len(coords), min_size, max_size)
+    
+    # Skip deletion of stems with length 1 to avoid forgi renaming issues
+    if (node_type == NodeType.STEM and action == ModificationType.DELETE and 
+        len(coords) == 4 and coords[0] == coords[1] and coords[2] == coords[3]):
+        logging.debug(f"Skipping deletion of length-1 stem {node_name} with coords {coords}")
+        # Try to find another eligible node or action
+        remaining_nodes = [(nt, nn, c, mins, maxs) for nt, nn, c, mins, maxs in all_eligible_nodes 
+                          if not (nt == NodeType.STEM and len(c) == 4 and c[0] == c[1] and c[2] == c[3])]
+        if remaining_nodes:
+            node_type, node_name, coords, min_size, max_size = random.choice(remaining_nodes)
+            action = modification_engine._choose_action(node_name, len(coords), min_size, max_size)
+        else:
+            return None
+    
+    # Apply the modification with correct parameters
+    try:
         if node_type == NodeType.STEM:
             if action == ModificationType.INSERT:
                 new_seq, new_struct = modification_engine._insert_stem_pair(sequence, structure, node_name, coords, bulge_graph)
@@ -183,6 +201,9 @@ def apply_single_modification(sequence: str, structure: str, modification_engine
                 'new_structure': new_struct,
                 'original_coords': coords,
             }
+    except Exception as e:
+        logging.debug(f"Failed to apply {action_name} to {node_type.value} {node_name}: {e}")
+        return None
     
     return None
 
