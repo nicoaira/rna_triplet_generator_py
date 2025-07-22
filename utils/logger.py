@@ -47,3 +47,9 @@ def setup_logging(debug: bool = False, log_file: str = None) -> None:
     # Set specific logger levels for external libraries
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     logging.getLogger('requests').setLevel(logging.WARNING)
+    
+    # Suppress forgi logging messages
+    logging.getLogger('forgi').setLevel(logging.WARNING)
+    logging.getLogger('forgi.graph').setLevel(logging.WARNING)
+    logging.getLogger('forgi.graph.bulge_graph').setLevel(logging.WARNING)
+    logging.getLogger('forgi.graph._cofold').setLevel(logging.WARNING)
