@@ -238,10 +238,13 @@ def test_bulge_graph_update(case):
     action = case["mod_action"]
 
     if action == "insert_pair":
-        left, right = sorted(inserted)
+        # SequenceMatcher can sometimes return more than two indices or
+        # duplicate indices when aligning repetitive regions.  Use the
+        # outermost indices to determine the inserted base pair.
+        left, right = min(inserted), max(inserted)
         BulgeGraphUpdater.insert_stem_pair(bg, node, left, right)
     elif action == "delete_pair":
-        left, right = sorted(deleted)
+        left, right = min(deleted), max(deleted)
         BulgeGraphUpdater.delete_stem_pair(bg, node, left, right)
     elif action == "insert":
         BulgeGraphUpdater.insert_loop_base(bg, node, inserted[0])
