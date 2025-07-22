@@ -111,9 +111,9 @@ def would_deletion_cause_disappearance(node_type: NodeType, coords: List[int], a
         coords[0] == coords[1] and coords[2] == coords[3]):
         return True
     
-    # Skip deletion of hairpins, multiloops, or bulges with only 2 equal coordinates
+    # Skip deletion of hairpins, multiloops, or bulges with only 1 base
     if node_type in [NodeType.HAIRPIN, NodeType.MULTI, NodeType.BULGE]:
-        if len(coords) == 2 and coords[0] == coords[1]:
+        if len(coords) == 2 and (coords[1] - coords[0] + 1) <= 1:
             return True
     
     # Skip deletion of internal loops where either side has length 1
@@ -218,6 +218,7 @@ def apply_single_modification(sequence: str, structure: str, modification_engine
         
         # Apply the modification with correct parameters
         try:
+            original_coords_full = coords[:]  # Capture original coordinates
             if node_type == NodeType.STEM:
                 if action == ModificationType.INSERT:
                     new_seq, new_struct = modification_engine._insert_stem_pair(sequence, structure, node_name, coords, bulge_graph)
@@ -241,7 +242,7 @@ def apply_single_modification(sequence: str, structure: str, modification_engine
                     'action': action_name,
                     'new_sequence': new_seq,
                     'new_structure': new_struct,
-                    'original_coords': coords,
+                    'original_coords': original_coords_full,
                 }
         except Exception as e:
             logging.debug(f"Failed to apply {action_name} to {node_type.value} {node_name}: {e}")
