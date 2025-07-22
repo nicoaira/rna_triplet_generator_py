@@ -211,8 +211,113 @@ class ModificationEngine:
         logger.debug(f"Internal loop modifications: {mod_counts.iloop}")
         logger.debug(f"Bulge modifications: {mod_counts.bulge}")
         logger.debug(f"Multi loop modifications: {mod_counts.mloop}")
-        
+
         return pos_seq, pos_struct, mod_counts
+
+    def _modify_stems(
+        self, sequence: str, structure: str, bulge_graph: BulgeGraph
+    ) -> Tuple[str, str]:
+        """Apply a single insertion or deletion on a random stem."""
+        eligible = self._get_eligible_nodes(
+            bulge_graph,
+            NodeType.STEM,
+            self.args.stem_min_size,
+            self.args.stem_max_size,
+            self.args.same_stem_max_n_mod,
+        )
+
+        if not eligible:
+            return sequence, structure
+
+        node_name, coords = random.choice(eligible)
+        action = self._choose_action(
+            node_name,
+            coords,
+            NodeType.STEM,
+            self.args.stem_min_size,
+            self.args.stem_max_size,
+        )
+
+        if action == ModificationType.INSERT:
+            sequence, structure = self._insert_stem_pair(
+                sequence, structure, node_name, coords, bulge_graph
+            )
+        else:
+            sequence, structure = self._delete_stem_pair(
+                sequence, structure, node_name, coords, bulge_graph
+            )
+
+        self.modification_counts[node_name] = (
+            self.modification_counts.get(node_name, 0) + 1
+        )
+        self.type_mod_counts.stem += 1
+
+        return sequence, structure
+
+    def _modify_loops(
+        self,
+        sequence: str,
+        structure: str,
+        bulge_graph: BulgeGraph,
+        node_type: NodeType,
+    ) -> Tuple[str, str]:
+        """Apply a single modification to a loop type."""
+        if node_type == NodeType.HAIRPIN:
+            min_size = self.args.hloop_min_size
+            max_size = self.args.hloop_max_size
+            max_mods = self.args.same_hloop_max_n_mod
+            counter_attr = "hloop"
+        elif node_type == NodeType.INTERNAL:
+            min_size = self.args.iloop_min_size
+            max_size = self.args.iloop_max_size
+            max_mods = self.args.same_iloop_max_n_mod
+            counter_attr = "iloop"
+        elif node_type == NodeType.BULGE:
+            min_size = self.args.bulge_min_size
+            max_size = self.args.bulge_max_size
+            max_mods = self.args.same_bulge_max_n_mod
+            counter_attr = "bulge"
+        elif node_type == NodeType.MULTI:
+            min_size = self.args.mloop_min_size
+            max_size = self.args.mloop_max_size
+            max_mods = self.args.same_mloop_max_n_mod
+            counter_attr = "mloop"
+        else:
+            return sequence, structure
+
+        eligible = self._get_eligible_nodes(
+            bulge_graph, node_type, min_size, max_size, max_mods
+        )
+        if not eligible:
+            return sequence, structure
+
+        node_name, coords = random.choice(eligible)
+        action = self._choose_action(
+            node_name, coords, node_type, min_size, max_size
+        )
+
+        if action == ModificationType.INSERT:
+            sequence, structure = self._insert_loop_base(
+                sequence, structure, node_name, coords, bulge_graph
+            )
+        else:
+            sequence, structure = self._delete_loop_base(
+                sequence,
+                structure,
+                node_name,
+                coords,
+                node_type,
+                min_size,
+                bulge_graph,
+            )
+
+        self.modification_counts[node_name] = (
+            self.modification_counts.get(node_name, 0) + 1
+        )
+
+        setattr(self.type_mod_counts, counter_attr, getattr(self.type_mod_counts, counter_attr) + 1)
+
+        return sequence, structure
     
     def _get_nucleotide_size(self, node_type: NodeType, coords: List[int]) -> int:
         """Calculate the nucleotide size of a structure based on its coordinates."""
