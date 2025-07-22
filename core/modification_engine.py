@@ -214,89 +214,46 @@ class ModificationEngine:
         
         return pos_seq, pos_struct, mod_counts
     
-    def _modify_stems(self, sequence: str, structure: str, bulge_graph: BulgeGraph) -> Tuple[str, str]:
-        """Apply a single stem modification."""
-        eligible_nodes = self._get_eligible_nodes(bulge_graph, NodeType.STEM, 
-                                                 self.args.stem_min_size, self.args.stem_max_size,
-                                                 self.args.same_stem_max_n_mod)
-        
-        if not eligible_nodes:
-            logger.debug("No eligible stem nodes found for modification")
-            return sequence, structure
-        
-        node_name, coords = random.choice(eligible_nodes)
-        action = self._choose_action(node_name, len(coords), 
-                                   self.args.stem_min_size, self.args.stem_max_size)
-        
-        logger.debug(f"Modifying stem node '{node_name}' with {len(coords)} coordinates: {coords}")
-        logger.debug(f"Action: {action.value}")
-        
-        if action == ModificationType.INSERT:
-            sequence, structure = self._insert_stem_pair(sequence, structure, node_name, coords, bulge_graph)
-            logger.debug("Inserted complementary base pair in stem")
-        elif action == ModificationType.DELETE:
-            sequence, structure = self._delete_stem_pair(sequence, structure, node_name, coords, bulge_graph)
-            logger.debug("Deleted complementary base pair from stem")
-
-        self.modification_counts[node_name] = self.modification_counts.get(node_name, 0) + 1
-        # Record modification at the stem level
-        self.type_mod_counts.stem += 1
-        return sequence, structure
-    
-    def _modify_loops(self, sequence: str, structure: str, bulge_graph: BulgeGraph, 
-                     node_type: NodeType) -> Tuple[str, str]:
-        """Apply a single loop modification."""
-        # Get parameters based on loop type
-        if node_type == NodeType.HAIRPIN:
-            min_size, max_size, max_mods = (self.args.hloop_min_size, 
-                                          self.args.hloop_max_size, 
-                                          self.args.same_hloop_max_n_mod)
-        elif node_type == NodeType.INTERNAL:
-            min_size, max_size, max_mods = (self.args.iloop_min_size,
-                                          self.args.iloop_max_size,
-                                          self.args.same_iloop_max_n_mod)
+    def _get_nucleotide_size(self, node_type: NodeType, coords: List[int]) -> int:
+        """Calculate the nucleotide size of a structure based on its coordinates."""
+        if not coords:
+            return 0
+            
+        if node_type == NodeType.STEM:
+            # Stems: coords[1] - coords[0] (length of one side)
+            if len(coords) >= 2:
+                return coords[1] - coords[0] + 1
+            return 0
+            
+        elif node_type == NodeType.HAIRPIN:
+            # Hairpin loops: coords[1] - coords[0]
+            if len(coords) >= 2:
+                return coords[1] - coords[0] + 1
+            return 0
+            
         elif node_type == NodeType.BULGE:
-            min_size, max_size, max_mods = (self.args.bulge_min_size,
-                                          self.args.bulge_max_size,
-                                          self.args.same_bulge_max_n_mod)
+            # Bulge loops: coords[1] - coords[0]
+            if len(coords) >= 2:
+                return coords[1] - coords[0] + 1
+            return 0
+            
         elif node_type == NodeType.MULTI:
-            min_size, max_size, max_mods = (self.args.mloop_min_size,
-                                          self.args.mloop_max_size,
-                                          self.args.same_mloop_max_n_mod)
-        else:
-            return sequence, structure
-        
-        eligible_nodes = self._get_eligible_nodes(bulge_graph, node_type, min_size, max_size, max_mods)
-        
-        if not eligible_nodes:
-            logger.debug(f"No eligible {node_type.value} nodes found for modification")
-            return sequence, structure
-        
-        node_name, coords = random.choice(eligible_nodes)
-        action = self._choose_action(node_name, len(coords), min_size, max_size)
-        
-        logger.debug(f"Modifying {node_type.value} node '{node_name}' with {len(coords)} coordinates: {coords}")
-        logger.debug(f"Action: {action.value}")
-        
-        if action == ModificationType.INSERT:
-            sequence, structure = self._insert_loop_base(sequence, structure, node_name, coords, bulge_graph)
-            logger.debug(f"Inserted base in {node_type.value}")
-        elif action == ModificationType.DELETE:
-            sequence, structure = self._delete_loop_base(sequence, structure, node_name, coords, min_size, bulge_graph)
-            logger.debug(f"Deleted base from {node_type.value}")
-
-        self.modification_counts[node_name] = self.modification_counts.get(node_name, 0) + 1
-        # Record modification count for the loop type
-        if node_type == NodeType.HAIRPIN:
-            self.type_mod_counts.hloop += 1
+            # Multiloops: coords[1] - coords[0] when len(coords) == 2, otherwise size is 0
+            if len(coords) == 2:
+                return coords[1] - coords[0] + 1
+            return 0
+            
         elif node_type == NodeType.INTERNAL:
-            self.type_mod_counts.iloop += 1
-        elif node_type == NodeType.BULGE:
-            self.type_mod_counts.bulge += 1
-        elif node_type == NodeType.MULTI:
-            self.type_mod_counts.mloop += 1
-        return sequence, structure
-    
+            # Internal loops: we'll need both sides for min/max comparison
+            if len(coords) >= 4:
+                side1_size = coords[1] - coords[0] + 1
+                side2_size = coords[3] - coords[2] + 1
+                # Return total size for general purposes, but we'll handle min/max separately
+                return side1_size + side2_size
+            return 0
+            
+        return 0
+
     def _get_eligible_nodes(self, bulge_graph: BulgeGraph, node_type: NodeType,
                            min_size: int, max_size: int, max_mods: int) -> List[Tuple[str, List[int]]]:
         """Get nodes eligible for modification."""
@@ -309,17 +266,50 @@ class ModificationEngine:
                 logger.debug(f"Skipping node '{node_name}' with empty coordinates")
                 continue
                 
+            # For multiloops with 0 coordinates, skip them for deletion
+            if node_type == NodeType.MULTI and len(coords) == 0:
+                logger.debug(f"Skipping multiloop '{node_name}' with 0 coordinates")
+                continue
+                
             # Check modification count limit
             if self.modification_counts.get(node_name, 0) >= max_mods:
                 continue
             
-            current_size = len(coords)
+            # Calculate actual nucleotide size
+            current_size = self._get_nucleotide_size(node_type, coords)
             
-            # Check if node can be modified
-            if self._can_modify_node(node_name, current_size, min_size, max_size):
-                eligible.append((node_name, coords))
+            # Special handling for internal loops
+            if node_type == NodeType.INTERNAL and len(coords) >= 4:
+                side1_size = coords[1] - coords[0] + 1
+                side2_size = coords[3] - coords[2] + 1
+                # Check if node can be modified based on min/max constraints
+                if self._can_modify_internal_loop(node_name, side1_size, side2_size, min_size, max_size):
+                    eligible.append((node_name, coords))
+            else:
+                # Check if node can be modified
+                if self._can_modify_node(node_name, current_size, min_size, max_size):
+                    eligible.append((node_name, coords))
         
         return eligible
+    
+    def _can_modify_internal_loop(self, node_name: str, side1_size: int, side2_size: int, min_size: int, max_size: int) -> bool:
+        """Check if an internal loop can be modified based on its two sides."""
+        if node_name in self.node_actions:
+            # Action already committed
+            action = self.node_actions[node_name]
+            if action == ModificationType.INSERT:
+                # Can insert if max of both sides is less than max_size
+                return max(side1_size, side2_size) < max_size
+            elif action == ModificationType.DELETE:
+                # Can delete if min of both sides is greater than min_size
+                return min(side1_size, side2_size) > min_size
+        else:
+            # Can modify if insertion or deletion is possible
+            can_insert = max(side1_size, side2_size) < max_size
+            can_delete = min(side1_size, side2_size) > min_size
+            return can_insert or can_delete
+        
+        return False
     
     def _can_modify_node(self, node_name: str, current_size: int, min_size: int, max_size: int) -> bool:
         """Check if a node can be modified."""
@@ -336,13 +326,21 @@ class ModificationEngine:
         
         return False
     
-    def _choose_action(self, node_name: str, current_size: int, min_size: int, max_size: int) -> ModificationType:
+    def _choose_action(self, node_name: str, coords: List[int], node_type: NodeType, min_size: int, max_size: int) -> ModificationType:
         """Choose insertion or deletion for a node."""
         if node_name in self.node_actions:
             return self.node_actions[node_name]
         
-        can_insert = current_size < max_size
-        can_delete = current_size > min_size
+        # Special handling for internal loops
+        if node_type == NodeType.INTERNAL and len(coords) >= 4:
+            side1_size = coords[1] - coords[0] + 1
+            side2_size = coords[3] - coords[2] + 1
+            can_insert = max(side1_size, side2_size) < max_size
+            can_delete = min(side1_size, side2_size) > min_size
+        else:
+            current_size = self._get_nucleotide_size(node_type, coords)
+            can_insert = current_size < max_size
+            can_delete = current_size > min_size
         
         if can_insert and can_delete:
             action = random.choice([ModificationType.INSERT, ModificationType.DELETE])
@@ -351,8 +349,10 @@ class ModificationEngine:
         elif can_delete:
             action = ModificationType.DELETE
         else:
-            action = ModificationType.INSERT  # Fallback
-        
+            # Fallback, though this state implies no modification is possible,
+            # which should be caught by _get_eligible_nodes.
+            action = ModificationType.INSERT
+
         self.node_actions[node_name] = action
         return action
     
@@ -503,10 +503,26 @@ class ModificationEngine:
         return sequence, structure
     
     def _delete_loop_base(self, sequence: str, structure: str, node_name: str,
-                          coords: List[int], min_size: int, bulge_graph: BulgeGraph) -> Tuple[str, str]:
+                          coords: List[int], node_type: NodeType, min_size: int, bulge_graph: BulgeGraph) -> Tuple[str, str]:
         """Delete a base from a loop region."""
-        if len(coords) <= min_size or not coords:
+        if not coords:
             return sequence, structure
+
+        # Calculate actual nucleotide size based on structure type
+        if node_type == NodeType.INTERNAL and len(coords) >= 4:
+            # For internal loops, check both sides
+            side1_size = coords[1] - coords[0] + 1
+            side2_size = coords[3] - coords[2] + 1
+            # Can delete if the minimum side is greater than min_size
+            if min(side1_size, side2_size) <= min_size:
+                logger.debug(f"Skipping deletion for internal loop {node_name} as min side size ({min(side1_size, side2_size)}) is not greater than min_size ({min_size})")
+                return sequence, structure
+        else:
+            # For other loop types, calculate size normally
+            current_size = self._get_nucleotide_size(node_type, coords)
+            if current_size <= min_size:
+                logger.debug(f"Skipping deletion for {node_type.value} {node_name} as its size ({current_size}) is not greater than min_size ({min_size})")
+                return sequence, structure
         
         # Choose random position to delete (convert to 0-based)
         pos = random.choice(coords) - 1

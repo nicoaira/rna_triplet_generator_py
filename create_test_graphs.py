@@ -209,7 +209,7 @@ def apply_single_modification(sequence: str, structure: str, modification_engine
         modification_engine.node_actions = {}
         
         # Choose action (insert or delete)
-        action = modification_engine._choose_action(node_name, len(coords), min_size, max_size)
+        action = modification_engine._choose_action(node_name, coords, node_type, min_size, max_size)
         
         # Check if this deletion would cause structural disappearance
         if would_deletion_cause_disappearance(node_type, coords, action):
@@ -231,7 +231,7 @@ def apply_single_modification(sequence: str, structure: str, modification_engine
                     new_seq, new_struct = modification_engine._insert_loop_base(sequence, structure, node_name, coords, bulge_graph)
                     action_name = "insert"
                 else:
-                    new_seq, new_struct = modification_engine._delete_loop_base(sequence, structure, node_name, coords, min_size, bulge_graph)
+                    new_seq, new_struct = modification_engine._delete_loop_base(sequence, structure, node_name, coords, node_type, min_size, bulge_graph)
                     action_name = "delete"
             
             # Check if modification actually occurred
