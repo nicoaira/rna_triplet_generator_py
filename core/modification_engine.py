@@ -309,6 +309,11 @@ class ModificationEngine:
         nodes_by_type = bulge_graph.get_nodes_by_type(node_type)
         
         for node_name, coords in nodes_by_type:
+            # Skip nodes with empty coordinates - they cannot be modified
+            if not coords or len(coords) == 0:
+                logger.debug(f"Skipping node '{node_name}' with empty coordinates")
+                continue
+                
             # Check modification count limit
             if self.modification_counts.get(node_name, 0) >= max_mods:
                 continue
