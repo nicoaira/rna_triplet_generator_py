@@ -205,6 +205,9 @@ def apply_single_modification(sequence: str, structure: str, modification_engine
         # Randomly select from all eligible nodes across all types
         node_type, node_name, coords, min_size, max_size = random.choice(all_eligible_nodes)
         
+        # Reset the node_actions to ensure no bias from previous test cases
+        modification_engine.node_actions = {}
+        
         # Choose action (insert or delete)
         action = modification_engine._choose_action(node_name, len(coords), min_size, max_size)
         
