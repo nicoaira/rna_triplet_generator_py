@@ -151,6 +151,12 @@ def apply_single_modification(sequence: str, structure: str, modification_engine
         # Choose action (insert or delete)
         action = modification_engine._choose_action(node_name, len(coords), min_size, max_size)
         
+        # Skip deletion of stems with length 1 to avoid forgi renaming issues
+        if (node_type == NodeType.STEM and action == ModificationType.DELETE and 
+            len(coords) == 4 and coords[0] == coords[1] and coords[2] == coords[3]):
+            logging.debug(f"Skipping deletion of length-1 stem {node_name} with coords {coords}")
+            continue
+        
         # Apply the modification with correct parameters
         if node_type == NodeType.STEM:
             if action == ModificationType.INSERT:
