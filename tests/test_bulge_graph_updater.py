@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from difflib import SequenceMatcher
 import sys
+from collections import defaultdict
+import atexit
 
 import pytest
 
@@ -11,6 +13,9 @@ sys.path.append(str(ROOT))
 
 from core.models import BulgeGraph, GraphNode
 from core.bulge_graph_updater import BulgeGraphUpdater
+
+# Global variable to collect test results by category
+test_results_by_category = defaultdict(lambda: defaultdict(lambda: {'passed': 0, 'failed': 0, 'failures': []}))
 
 
 def _build_graph(mapping):
@@ -85,8 +90,123 @@ def _format_graph_differences(result, expected):
     return '\n'.join(diff_lines)
 
 
+def _get_action_category(mod_action):
+    """Categorize modification actions into insertions and deletions."""
+    if mod_action in ['insert', 'insert_pair']:
+        return 'insertions'
+    elif mod_action in ['delete', 'delete_pair']:
+        return 'deletions'
+    else:
+        return 'other'
+
+
+def _normalize_structure_type(mod_node_type):
+    """Normalize structure type names for consistent categorization."""
+    type_mapping = {
+        'stem': 'stems',
+        'hairpin': 'hairpins', 
+        'internal': 'internal_loops',
+        'bulge': 'bulges',
+        'multi': 'multi_loops'
+    }
+    return type_mapping.get(mod_node_type.lower(), mod_node_type)
+
+
+def save_and_print_summary():
+    """Save and print the categorized test results summary."""
+    global test_results_by_category
+    
+    if not test_results_by_category:
+        return
+    
+    summary_lines = []
+    summary_lines.append("\n" + "="*80)
+    summary_lines.append("TEST RESULTS BY STRUCTURE TYPE AND ACTION")
+    summary_lines.append("="*80)
+    
+    total_passed = 0
+    total_failed = 0
+    
+    # Sort structure types for consistent output
+    structure_types = ['stems', 'hairpins', 'internal_loops', 'bulges', 'multi_loops']
+    
+    for structure_type in structure_types:
+        if structure_type not in test_results_by_category:
+            continue
+            
+        summary_lines.append(f"\n{structure_type.upper()}:")
+        summary_lines.append("-" * 40)
+        
+        structure_passed = 0
+        structure_failed = 0
+        
+        # Process insertions and deletions
+        for action_type in ['insertions', 'deletions']:
+            if action_type in test_results_by_category[structure_type]:
+                stats = test_results_by_category[structure_type][action_type]
+                passed = stats['passed']
+                failed = stats['failed']
+                total_tests = passed + failed
+                
+                if total_tests > 0:
+                    success_rate = (passed / total_tests) * 100
+                    summary_lines.append(f"  {action_type}: {passed}/{total_tests} passed ({success_rate:.1f}%)")
+                    
+                    if failed > 0:
+                        failed_cases = [f['case_id'] for f in stats['failures']]
+                        summary_lines.append(f"    Failed cases: {failed_cases[:10]}{'...' if len(failed_cases) > 10 else ''}")
+                    
+                    structure_passed += passed
+                    structure_failed += failed
+        
+        if structure_passed + structure_failed > 0:
+            structure_total = structure_passed + structure_failed
+            structure_success_rate = (structure_passed / structure_total) * 100
+            summary_lines.append(f"  TOTAL: {structure_passed}/{structure_total} passed ({structure_success_rate:.1f}%)")
+            
+            total_passed += structure_passed
+            total_failed += structure_failed
+    
+    # Print overall summary
+    if total_passed + total_failed > 0:
+        overall_total = total_passed + total_failed
+        overall_success_rate = (total_passed / overall_total) * 100
+        summary_lines.append(f"\n{'='*80}")
+        summary_lines.append(f"OVERALL SUMMARY: {total_passed}/{overall_total} passed ({overall_success_rate:.1f}%)")
+        summary_lines.append(f"{'='*80}")
+        
+        # Print detailed failure summary if there are failures
+        if total_failed > 0:
+            summary_lines.append(f"\nDETAILED FAILURE SUMMARY:")
+            summary_lines.append("-" * 40)
+            for structure_type, actions in test_results_by_category.items():
+                for action_type, stats in actions.items():
+                    if stats['failed'] > 0:
+                        summary_lines.append(f"\n{structure_type} - {action_type} ({stats['failed']} failures):")
+                        for failure in stats['failures'][:5]:  # Show first 5 failures
+                            summary_lines.append(f"  Case {failure['case_id']}: {failure['node']} ({failure['action']})")
+                        if len(stats['failures']) > 5:
+                            summary_lines.append(f"  ... and {len(stats['failures']) - 5} more")
+    
+    # Print to console
+    summary_text = '\n'.join(summary_lines)
+    print(summary_text)
+    
+    # Also save to file
+    try:
+        with open('test_summary_by_category.txt', 'w') as f:
+            f.write(summary_text)
+    except Exception:
+        pass  # Don't fail if we can't write the file
+
+# Register the summary function to run at exit
+atexit.register(save_and_print_summary)
+
+
 @pytest.mark.parametrize("case", load_cases())
 def test_bulge_graph_update(case):
+    global test_results_by_category
+    
     bg = _build_graph(case["pre_mod_bulgegraph"])
     inserted, deleted = _diff_indices(case["pre_mod_seq"], case["post_mod_seq"])
 
@@ -106,8 +226,28 @@ def test_bulge_graph_update(case):
 
     result = {n: g.positions for n, g in bg.elements.items()}
     
+    # Categorize the test
+    structure_type = _normalize_structure_type(case.get('mod_node_type', 'unknown'))
+    action_category = _get_action_category(action)
+    
+    # Check if test passes
+    test_passed = result == case["post_mod_bulgegraph"]
+    
+    if test_passed:
+        test_results_by_category[structure_type][action_category]['passed'] += 1
+    else:
+        test_results_by_category[structure_type][action_category]['failed'] += 1
+        failure_info = {
+            'case_id': case.get('case_id', 'N/A'),
+            'node': node,
+            'action': action,
+            'structure_type': structure_type,
+            'expected_diff': _format_graph_differences(result, case["post_mod_bulgegraph"])
+        }
+        test_results_by_category[structure_type][action_category]['failures'].append(failure_info)
+    
     # Create detailed error message if assertion fails
-    if result != case["post_mod_bulgegraph"]:
+    if not test_passed:
         modification_info = _format_modification_info(case, inserted, deleted)
         graph_differences = _format_graph_differences(result, case["post_mod_bulgegraph"])
         
@@ -126,3 +266,18 @@ Attempt: {case.get('attempt', 'N/A')}
         pytest.fail(error_msg)
     
     assert result == case["post_mod_bulgegraph"]
+
+
+# Multiple hooks to ensure the summary is printed
+def pytest_sessionfinish(session, exitstatus):
+    """Called after whole test run finished."""
+    # Don't print here to avoid duplicate output since we use atexit
+    pass
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Called to write the summary at the end of the terminal output."""
+    # This hook is called after all tests are done and before pytest exits
+    # It's more reliable than sessionfinish
+    save_and_print_summary()
