@@ -1,201 +1,277 @@
 #!/usr/bin/env python3
 """
-Structure plotting utilities for RNA sequences and structures.
+Structure plotting utilities for RNA sequences and structures using rnartistcore.
 
 This module provides functionality to visualize RNA secondary structures
-using matplotlib, similar to the rnartistcore functionality from the Rust version.
+using rnartistcore, similar to the functionality from the Rust version.
 """
 
 import logging
-import math
 import random
+import subprocess
+import tempfile
 from pathlib import Path
-from typing import List, Tuple, Dict, Optional
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from matplotlib.collections import LineCollection
-import numpy as np
+from typing import List, Optional
+import shutil
 
 logger = logging.getLogger(__name__)
 
 
-class RnaStructurePlotter:
-    """Plots RNA secondary structures using matplotlib."""
+class RnartistCorePlotter:
+    """Plots RNA secondary structures using rnartistcore."""
     
-    def __init__(self, figsize: Tuple[int, int] = (12, 8)):
-        """Initialize the plotter with figure settings."""
-        self.figsize = figsize
-        self.base_colors = {
-            'A': '#FF6B6B',  # Red
-            'U': '#4ECDC4',  # Teal
-            'G': '#45B7D1',  # Blue
-            'C': '#FFA07A',  # Orange
-            'N': '#808080'   # Gray for unknown
-        }
-        self.bond_color = '#2C3E50'  # Dark blue-gray
-        self.backbone_color = '#34495E'  # Darker gray
+    def __init__(self):
+        """Initialize the plotter and check for rnartistcore availability."""
+        self.rnartistcore_available = self._check_rnartistcore()
+        self.montage_available = self._check_montage()
         
+    def _check_rnartistcore(self) -> bool:
+        """Check if rnartistcore is available in the system."""
+        try:
+            result = subprocess.run(['rnartistcore', '--version'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                logger.info("rnartistcore found and available")
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        
+        logger.warning("rnartistcore not found. Structure plotting will be disabled.")
+        return False
+    
+    def _check_montage(self) -> bool:
+        """Check if ImageMagick montage is available for combining images."""
+        try:
+            result = subprocess.run(['montage', '-version'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                logger.info("ImageMagick montage found and available")
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        
+        logger.warning("ImageMagick montage not found. Will create individual plots only.")
+        return False
+    
     def plot_triplet(self, triplet, output_path: Path, title: str = None) -> None:
         """
-        Plot an RNA triplet (anchor, positive, negative) in a single figure.
+        Plot an RNA triplet (anchor, positive, negative) using rnartistcore.
         
         Args:
             triplet: RnaTriplet object containing sequences and structures
             output_path: Path to save the plot
-            title: Optional title for the plot
+            title: Optional title for the plot (not used in rnartistcore)
         """
-        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+        if not self.rnartistcore_available:
+            logger.error("Cannot plot: rnartistcore not available")
+            return
         
-        # Plot each structure
-        self._plot_structure(axes[0], triplet.anchor_seq, triplet.anchor_structure, 
-                           f"Anchor (ID: {triplet.triplet_id})")
-        self._plot_structure(axes[1], triplet.positive_seq, triplet.positive_structure, 
-                           f"Positive ({triplet.total_modifications} mods)")
-        self._plot_structure(axes[2], triplet.negative_seq, triplet.negative_structure, 
-                           "Negative")
-        
-        if title:
-            fig.suptitle(title, fontsize=16, fontweight='bold')
-        
-        plt.tight_layout()
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        plt.close()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            # Generate individual structure plots
+            anchor_png = temp_path / f"triplet_{triplet.triplet_id}_anchor.png"
+            positive_png = temp_path / f"triplet_{triplet.triplet_id}_positive.png"
+            negative_png = temp_path / f"triplet_{triplet.triplet_id}_negative.png"
+            
+            # Create rnartistcore script for all three structures
+            batch_script = self._create_triplet_batch_script(
+                triplet, temp_path.resolve()
+            )
+            
+            # Write batch script
+            script_path = temp_path / "batch_plot.kts"
+            with open(script_path, 'w') as f:
+                f.write(batch_script)
+            
+            # Run rnartistcore
+            try:
+                result = subprocess.run(['rnartistcore', str(script_path)], 
+                                      capture_output=True, text=True, timeout=60)
+                if result.returncode != 0:
+                    logger.error(f"rnartistcore failed: {result.stderr}")
+                    return
+            except subprocess.TimeoutExpired:
+                logger.error("rnartistcore timed out")
+                return
+            
+            # Check if all individual images were created
+            if not (anchor_png.exists() and positive_png.exists() and negative_png.exists()):
+                logger.error(f"One or more images for triplet {triplet.triplet_id} not found")
+                return
+            
+            # Combine images using montage if available
+            if self.montage_available:
+                self._combine_images_with_montage([anchor_png, positive_png, negative_png], 
+                                                output_path)
+            else:
+                # If montage not available, just copy the anchor image as fallback
+                shutil.copy2(anchor_png, output_path)
+                logger.warning(f"Montage not available. Saved only anchor for triplet {triplet.triplet_id}")
         
         logger.debug(f"Saved triplet plot to {output_path}")
     
     def plot_structure(self, sequence: str, structure: str, output_path: Path, 
-                      title: str = None) -> None:
+                      title: str = None, structure_name: str = "structure") -> None:
         """
-        Plot a single RNA structure.
+        Plot a single RNA structure using rnartistcore.
         
         Args:
             sequence: RNA sequence string
             structure: Dot-bracket structure string
             output_path: Path to save the plot
-            title: Optional title for the plot
+            title: Optional title for the plot (not used in rnartistcore)
+            structure_name: Name for the structure in rnartistcore
         """
-        fig, ax = plt.subplots(1, 1, figsize=self.figsize)
-        self._plot_structure(ax, sequence, structure, title)
+        if not self.rnartistcore_available:
+            logger.error("Cannot plot: rnartistcore not available")
+            return
         
-        plt.tight_layout()
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        plt.close()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            # Create rnartistcore script
+            script_content = self._create_single_structure_script(
+                sequence, structure, temp_path.resolve(), structure_name
+            )
+            
+            # Write script
+            script_path = temp_path / "plot.kts"
+            with open(script_path, 'w') as f:
+                f.write(script_content)
+            
+            # Run rnartistcore
+            try:
+                result = subprocess.run(['rnartistcore', str(script_path)], 
+                                      capture_output=True, text=True, timeout=30)
+                if result.returncode != 0:
+                    logger.error(f"rnartistcore failed: {result.stderr}")
+                    return
+            except subprocess.TimeoutExpired:
+                logger.error("rnartistcore timed out")
+                return
+            
+            # Copy result to output path
+            temp_png = temp_path / f"{structure_name}.png"
+            if temp_png.exists():
+                shutil.copy2(temp_png, output_path)
+            else:
+                logger.error(f"rnartistcore did not create expected output: {temp_png}")
         
         logger.debug(f"Saved structure plot to {output_path}")
     
-    def _plot_structure(self, ax, sequence: str, structure: str, title: str = None) -> None:
-        """
-        Plot RNA structure on given axes using circular layout.
+    def _create_triplet_batch_script(self, triplet, temp_dir: Path) -> str:
+        """Create rnartistcore batch script for a triplet."""
+        anchor_block = f'''rnartist {{
+  png {{
+    path = "{temp_dir}"
+    width = 500.0
+    height = 500.0
+  }}
+  ss {{
+    bn {{
+      value = "{triplet.anchor_structure}"
+      seq = "{triplet.anchor_seq}"
+      name = "triplet_{triplet.triplet_id}_anchor"
+    }}
+  }}
+  theme {{
+    details {{
+      value = 5
+    }}
+    scheme {{
+      value = "Pumpkin Vegas"
+    }}
+  }}
+}}'''
         
-        Args:
-            ax: Matplotlib axes object
-            sequence: RNA sequence string
-            structure: Dot-bracket structure string
-            title: Optional title for the subplot
-        """
-        if len(sequence) != len(structure):
-            logger.error(f"Sequence and structure length mismatch: {len(sequence)} vs {len(structure)}")
-            return
+        positive_block = f'''rnartist {{
+  png {{
+    path = "{temp_dir}"
+    width = 500.0
+    height = 500.0
+  }}
+  ss {{
+    bn {{
+      value = "{triplet.positive_structure}"
+      seq = "{triplet.positive_seq}"
+      name = "triplet_{triplet.triplet_id}_positive"
+    }}
+  }}
+  theme {{
+    details {{
+      value = 5
+    }}
+    scheme {{
+      value = "Pumpkin Vegas"
+    }}
+  }}
+}}'''
         
-        n = len(sequence)
-        if n == 0:
-            ax.text(0.5, 0.5, "Empty sequence", ha='center', va='center', transform=ax.transAxes)
-            if title:
-                ax.set_title(title)
-            return
+        negative_block = f'''rnartist {{
+  png {{
+    path = "{temp_dir}"
+    width = 500.0
+    height = 500.0
+  }}
+  ss {{
+    bn {{
+      value = "{triplet.negative_structure}"
+      seq = "{triplet.negative_seq}"
+      name = "triplet_{triplet.triplet_id}_negative"
+    }}
+  }}
+  theme {{
+    details {{
+      value = 5
+    }}
+    scheme {{
+      value = "Pumpkin Vegas"
+    }}
+  }}
+}}'''
         
-        # Calculate circular positions
-        positions = self._calculate_circular_positions(n)
-        
-        # Find base pairs
-        pairs = self._find_base_pairs(structure)
-        
-        # Draw backbone
-        self._draw_backbone(ax, positions)
-        
-        # Draw base pairs
-        self._draw_base_pairs(ax, positions, pairs)
-        
-        # Draw bases
-        self._draw_bases(ax, positions, sequence)
-        
-        # Set up axes
-        ax.set_aspect('equal')
-        ax.axis('off')
-        
-        if title:
-            ax.set_title(title, fontsize=12, fontweight='bold')
-        
-        # Add sequence info as text
-        info_text = f"Length: {n} nt"
-        if pairs:
-            info_text += f", {len(pairs)} pairs"
-        ax.text(0.02, 0.02, info_text, transform=ax.transAxes, 
-               fontsize=8, alpha=0.7)
+        return f"{anchor_block}\n{positive_block}\n{negative_block}\n"
     
-    def _calculate_circular_positions(self, n: int, radius: float = 1.0) -> List[Tuple[float, float]]:
-        """Calculate positions for bases in a circular layout."""
-        positions = []
-        for i in range(n):
-            angle = 2 * math.pi * i / n - math.pi / 2  # Start from top
-            x = radius * math.cos(angle)
-            y = radius * math.sin(angle)
-            positions.append((x, y))
-        return positions
+    def _create_single_structure_script(self, sequence: str, structure: str, 
+                                      temp_dir: Path, name: str) -> str:
+        """Create rnartistcore script for a single structure."""
+        return f'''rnartist {{
+  png {{
+    path = "{temp_dir}"
+    width = 500.0
+    height = 500.0
+  }}
+  ss {{
+    bn {{
+      value = "{structure}"
+      seq = "{sequence}"
+      name = "{name}"
+    }}
+  }}
+  theme {{
+    details {{
+      value = 5
+    }}
+    scheme {{
+      value = "Pumpkin Vegas"
+    }}
+  }}
+}}'''
     
-    def _find_base_pairs(self, structure: str) -> List[Tuple[int, int]]:
-        """Find base pairs from dot-bracket notation."""
-        pairs = []
-        stack = []
-        
-        for i, char in enumerate(structure):
-            if char == '(':
-                stack.append(i)
-            elif char == ')':
-                if stack:
-                    j = stack.pop()
-                    pairs.append((j, i))
-        
-        return pairs
-    
-    def _draw_backbone(self, ax, positions: List[Tuple[float, float]]) -> None:
-        """Draw the RNA backbone connecting consecutive bases."""
-        if len(positions) < 2:
-            return
-        
-        # Create line segments for backbone
-        segments = []
-        for i in range(len(positions) - 1):
-            segments.append([positions[i], positions[i + 1]])
-        
-        lc = LineCollection(segments, colors=self.backbone_color, linewidths=2, alpha=0.6)
-        ax.add_collection(lc)
-    
-    def _draw_base_pairs(self, ax, positions: List[Tuple[float, float]], 
-                        pairs: List[Tuple[int, int]]) -> None:
-        """Draw lines representing base pairs."""
-        for i, j in pairs:
-            if i < len(positions) and j < len(positions):
-                x1, y1 = positions[i]
-                x2, y2 = positions[j]
-                ax.plot([x1, x2], [y1, y2], color=self.bond_color, 
-                       linewidth=1.5, alpha=0.8, zorder=1)
-    
-    def _draw_bases(self, ax, positions: List[Tuple[float, float]], sequence: str) -> None:
-        """Draw individual bases as colored circles with letters."""
-        for i, (x, y) in enumerate(positions):
-            if i < len(sequence):
-                base = sequence[i].upper()
-                color = self.base_colors.get(base, self.base_colors['N'])
-                
-                # Draw circle
-                circle = patches.Circle((x, y), 0.05, facecolor=color, 
-                                      edgecolor='white', linewidth=1, zorder=2)
-                ax.add_patch(circle)
-                
-                # Draw letter
-                ax.text(x, y, base, ha='center', va='center', 
-                       fontsize=8, fontweight='bold', color='white', zorder=3)
+    def _combine_images_with_montage(self, image_paths: List[Path], output_path: Path) -> None:
+        """Combine multiple images into one using ImageMagick montage."""
+        try:
+            cmd = ['montage'] + [str(p) for p in image_paths] + [
+                '-tile', '3x1',
+                '-geometry', '+10+10',
+                str(output_path)
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                logger.error(f"montage failed: {result.stderr}")
+        except subprocess.TimeoutExpired:
+            logger.error("montage timed out")
 
 
 class StructurePlotManager:
@@ -204,7 +280,7 @@ class StructurePlotManager:
     def __init__(self, args):
         """Initialize with command line arguments."""
         self.args = args
-        self.plotter = RnaStructurePlotter()
+        self.plotter = RnartistCorePlotter()
         self.plot_dir = None
         
     def setup_plotting(self, output_dir: Path) -> None:
@@ -225,6 +301,10 @@ class StructurePlotManager:
         if not self.args.plot or not self.plot_dir:
             return
         
+        if not self.plotter.rnartistcore_available:
+            logger.error("Cannot plot: rnartistcore not available")
+            return
+        
         if not triplets:
             logger.warning("No triplets to plot")
             return
@@ -232,7 +312,7 @@ class StructurePlotManager:
         num_plots = num_plots or self.args.num_plots
         num_plots = min(num_plots, len(triplets))
         
-        logger.info(f"Plotting {num_plots} triplets...")
+        logger.info(f"Plotting {num_plots} triplets using rnartistcore...")
         
         # Select triplets to plot (random sampling if more than requested)
         if len(triplets) <= num_plots:
@@ -247,7 +327,7 @@ class StructurePlotManager:
             try:
                 self.plotter.plot_triplet(triplet, output_path, title)
                 
-                if (i + 1) % 10 == 0 or i == len(selected_triplets) - 1:
+                if (i + 1) % 5 == 0 or i == len(selected_triplets) - 1:
                     logger.info(f"Plotted {i + 1}/{len(selected_triplets)} triplets")
                     
             except Exception as e:
@@ -258,13 +338,17 @@ class StructurePlotManager:
     
     def plot_sample_structures(self, triplets: List, sample_size: int = 5) -> None:
         """
-        Plot individual structures from a sample of triplets.
+        Plot individual structures from a sample of triplets using rnartistcore.
         
         Args:
             triplets: List of RnaTriplet objects
             sample_size: Number of sample structures to plot
         """
         if not self.args.plot or not self.plot_dir:
+            return
+        
+        if not self.plotter.rnartistcore_available:
+            logger.error("Cannot plot individual structures: rnartistcore not available")
             return
         
         if not triplets:
@@ -283,21 +367,24 @@ class StructurePlotManager:
             self.plotter.plot_structure(
                 triplet.anchor_seq, triplet.anchor_structure,
                 structures_dir / f"{base_name}_anchor.png",
-                f"Anchor - Triplet {triplet.triplet_id}"
+                f"Anchor - Triplet {triplet.triplet_id}",
+                f"{base_name}_anchor"
             )
             
             # Plot positive
             self.plotter.plot_structure(
                 triplet.positive_seq, triplet.positive_structure,
                 structures_dir / f"{base_name}_positive.png",
-                f"Positive - Triplet {triplet.triplet_id} ({triplet.total_modifications} mods)"
+                f"Positive - Triplet {triplet.triplet_id} ({triplet.total_modifications} mods)",
+                f"{base_name}_positive"
             )
             
             # Plot negative
             self.plotter.plot_structure(
                 triplet.negative_seq, triplet.negative_structure,
                 structures_dir / f"{base_name}_negative.png",
-                f"Negative - Triplet {triplet.triplet_id}"
+                f"Negative - Triplet {triplet.triplet_id}",
+                f"{base_name}_negative"
             )
         
         logger.info(f"Individual structure plots saved to: {structures_dir}")
