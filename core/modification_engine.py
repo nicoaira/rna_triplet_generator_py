@@ -362,7 +362,7 @@ class ModificationEngine:
         return action
     
     def _insert_stem_pair(self, sequence: str, structure: str, coords: List[int]) -> Tuple[str, str]:
-        """Insert a complementary base pair in a stem."""
+        """Insert a complementary base pair in a stem at random positions."""
         if len(coords) < 2:
             return sequence, structure
         
@@ -373,13 +373,55 @@ class ModificationEngine:
         left_half = sorted_coords[:n//2]
         right_half = sorted_coords[n//2:]
         
-        # Find insertion positions (convert to 0-based)
-        left_pos = left_half[-1]  # After last left base
-        right_pos = right_half[0] - 1  # Before first right base
+        # Choose a random position in the left half to insert after
+        # We can insert between any adjacent positions in the left half
+        left_insert_options = []
+        for i in range(len(left_half)):
+            if i == 0:
+                # Can insert before the first position
+                left_insert_options.append(left_half[i] - 1)
+            # Can insert after each position
+            left_insert_options.append(left_half[i])
+        
+        # Choose random insertion position in left half
+        left_pos = random.choice(left_insert_options)
+        
+        # Calculate corresponding position in right half
+        # If we insert at position left_pos, we need to find the corresponding right position
+        # The pairing logic: if left_half[i] pairs with right_half[-(i+1)]
+        # We need to find which left position corresponds to our insertion
+        
+        # Find which "gap" in the left half we're inserting into
+        left_gap_index = 0
+        for i, pos in enumerate(left_half):
+            if left_pos <= pos:
+                left_gap_index = i
+                break
+        else:
+            left_gap_index = len(left_half)
+        
+        # The corresponding right position is the mirror of the left gap
+        if left_gap_index == 0:
+            # Inserting before first left base, so insert after last right base
+            right_pos = right_half[-1]
+        elif left_gap_index == len(left_half):
+            # Inserting after last left base, so insert before first right base
+            right_pos = right_half[0] - 1
+        else:
+            # Inserting between left positions, insert between corresponding right positions
+            # If inserting between left_half[i-1] and left_half[i], 
+            # insert between right_half[-(i)] and right_half[-(i+1)]
+            right_mirror_index = len(right_half) - left_gap_index
+            if right_mirror_index > 0:
+                right_pos = right_half[right_mirror_index - 1]
+            else:
+                right_pos = right_half[0] - 1
         
         # Choose complementary bases
         complement_pairs = [('A', 'U'), ('U', 'A'), ('G', 'C'), ('C', 'G')]
         base_left, base_right = random.choice(complement_pairs)
+        
+        logger.debug(f"Inserting stem pair at positions {left_pos} ('{base_left}') and {right_pos} ('{base_right}')")
         
         # Insert bases (higher index first to avoid position shifts)
         if left_pos < right_pos:
@@ -396,23 +438,43 @@ class ModificationEngine:
         return sequence, structure
     
     def _delete_stem_pair(self, sequence: str, structure: str, coords: List[int]) -> Tuple[str, str]:
-        """Delete a complementary base pair from a stem."""
+        """Delete a complementary base pair from a stem at random positions."""
         if len(coords) < 4:  # Need at least 4 bases to safely delete a pair
             return sequence, structure
         
         sorted_coords = sorted(coords)
         n = len(sorted_coords)
         
-        # Choose positions to delete (convert to 0-based)
-        left_idx = sorted_coords[n//2 - 1] - 1
-        right_idx = sorted_coords[n//2] - 1
+        # Split into left and right halves
+        left_half = sorted_coords[:n//2]
+        right_half = sorted_coords[n//2:]
         
-        # Delete bases (higher index first)
-        if right_idx < len(sequence) and left_idx < len(sequence) and right_idx > left_idx:
-            sequence = sequence[:right_idx] + sequence[right_idx+1:]
-            structure = structure[:right_idx] + structure[right_idx+1:]
-            sequence = sequence[:left_idx] + sequence[left_idx+1:]
-            structure = structure[:left_idx] + structure[left_idx+1:]
+        # Choose a random position from the left half to delete
+        left_delete_idx = random.randint(0, len(left_half) - 1)
+        left_pos = left_half[left_delete_idx] - 1  # Convert to 0-based
+        
+        # Calculate the corresponding position in the right half
+        # The pairing logic: left_half[i] pairs with right_half[-(i+1)]
+        # So left_half[left_delete_idx] pairs with right_half[-(left_delete_idx+1)]
+        right_delete_idx = len(right_half) - 1 - left_delete_idx
+        right_pos = right_half[right_delete_idx] - 1  # Convert to 0-based
+        
+        logger.debug(f"Deleting stem pair at positions {left_pos} and {right_pos}")
+        logger.debug(f"Left half: {left_half}, deleting index {left_delete_idx}")
+        logger.debug(f"Right half: {right_half}, deleting index {right_delete_idx}")
+        
+        # Delete bases (higher index first to avoid position shifts)
+        if right_pos < len(sequence) and left_pos < len(sequence) and right_pos > left_pos:
+            sequence = sequence[:right_pos] + sequence[right_pos+1:]
+            structure = structure[:right_pos] + structure[right_pos+1:]
+            sequence = sequence[:left_pos] + sequence[left_pos+1:]
+            structure = structure[:left_pos] + structure[left_pos+1:]
+        elif left_pos < len(sequence) and right_pos < len(sequence) and left_pos > right_pos:
+            # Handle case where positions might be reversed
+            sequence = sequence[:left_pos] + sequence[left_pos+1:]
+            structure = structure[:left_pos] + structure[left_pos+1:]
+            sequence = sequence[:right_pos] + sequence[right_pos+1:]
+            structure = structure[:right_pos] + structure[right_pos+1:]
         
         return sequence, structure
     
