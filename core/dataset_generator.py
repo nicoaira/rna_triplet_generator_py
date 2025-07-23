@@ -11,6 +11,7 @@ from .models import RnaTriplet, DatasetMetadata
 from .rna_generator import RnaGenerator, BulgeGraphParser
 from .modification_engine import ModificationEngine
 from .negative_generator import NegativeSampleGenerator, AppendingEngine
+from .models import NodeType, classify_node
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +95,49 @@ class DatasetGenerator:
         for idx in indices:
             triplet = self._generate_single_triplet(idx)
             batch_triplets.append(triplet)
-        
+
         return batch_triplets
+
+    def _calculate_structure_lengths(self, bulge_graph) -> tuple[int, int, int, int, int]:
+        """Calculate total nucleotide lengths for each structure type on the anchor."""
+        totals = {
+            NodeType.STEM: 0,
+            NodeType.HAIRPIN: 0,
+            NodeType.INTERNAL: 0,
+            NodeType.BULGE: 0,
+            NodeType.MULTI: 0,
+        }
+
+        for node_name, coords in bulge_graph.node_mapping().items():
+            ntype = classify_node(node_name, coords)
+            if not coords:
+                size = 0
+            elif ntype == NodeType.STEM:
+                size = coords[1] - coords[0] + 1 if len(coords) >= 2 else 0
+            elif ntype == NodeType.HAIRPIN:
+                size = coords[1] - coords[0] + 1 if len(coords) >= 2 else 0
+            elif ntype == NodeType.BULGE:
+                size = coords[1] - coords[0] + 1 if len(coords) >= 2 else 0
+            elif ntype == NodeType.MULTI:
+                size = coords[1] - coords[0] + 1 if len(coords) == 2 else 0
+            elif ntype == NodeType.INTERNAL:
+                size = (
+                    coords[1] - coords[0] + coords[3] - coords[2] + 2
+                    if len(coords) >= 4
+                    else 0
+                )
+            else:
+                size = 0
+            if ntype in totals:
+                totals[ntype] += size
+
+        return (
+            totals[NodeType.STEM],
+            totals[NodeType.HAIRPIN],
+            totals[NodeType.INTERNAL],
+            totals[NodeType.BULGE],
+            totals[NodeType.MULTI],
+        )
     
     def _generate_single_triplet(self, triplet_id: int) -> RnaTriplet:
         """
@@ -112,6 +154,8 @@ class DatasetGenerator:
         
         # Step 2: Parse anchor structure into bulge graph
         anchor_graph = self.bulge_parser.parse_structure(anchor_struct)
+
+        stem_len, hloop_len, iloop_len, bulge_len, mloop_len = self._calculate_structure_lengths(anchor_graph)
         
         # Step 3: Sample modifications and generate positive
         sampled_mods = self.modification_engine.sample_modifications(anchor_graph)
@@ -141,7 +185,12 @@ class DatasetGenerator:
             hloop_modifications=mod_counts.hloop,
             iloop_modifications=mod_counts.iloop,
             bulge_modifications=mod_counts.bulge,
-            mloop_modifications=mod_counts.mloop
+            mloop_modifications=mod_counts.mloop,
+            total_len_stems=stem_len,
+            total_len_hloops=hloop_len,
+            total_len_iloops=iloop_len,
+            total_len_bulges=bulge_len,
+            total_len_mloops=mloop_len
         )
     
     def _generate_anchor(self) -> tuple[str, str]:

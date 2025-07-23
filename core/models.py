@@ -99,6 +99,11 @@ class RnaTriplet:
     iloop_modifications: int
     bulge_modifications: int
     mloop_modifications: int
+    total_len_stems: int
+    total_len_hloops: int
+    total_len_iloops: int
+    total_len_bulges: int
+    total_len_mloops: int
 
 
 @dataclass
