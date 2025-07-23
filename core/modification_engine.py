@@ -51,39 +51,133 @@ class ModificationEngine:
         
         return "\n".join(summary_lines)
 
-    def sample_modifications(self) -> SampledModifications:
-        """Sample modification counts from truncated normal distributions."""
-        return SampledModifications(
-            n_stem_indels=self._sample_truncated_normal(
-                self.args.n_stem_indels_mean, self.args.n_stem_indels_sd,
-                self.args.n_stem_indels_min, self.args.n_stem_indels_max
-            ),
-            n_hloop_indels=self._sample_truncated_normal(
-                self.args.n_hloop_indels_mean, self.args.n_hloop_indels_sd,
-                self.args.n_hloop_indels_min, self.args.n_hloop_indels_max
-            ),
-            n_iloop_indels=self._sample_truncated_normal(
-                self.args.n_iloop_indels_mean, self.args.n_iloop_indels_sd,
-                self.args.n_iloop_indels_min, self.args.n_iloop_indels_max
-            ),
-            n_bulge_indels=self._sample_truncated_normal(
-                self.args.n_bulge_indels_mean, self.args.n_bulge_indels_sd,
-                self.args.n_bulge_indels_min, self.args.n_bulge_indels_max
-            ),
-            n_mloop_indels=self._sample_truncated_normal(
-                self.args.n_mloop_indels_mean, self.args.n_mloop_indels_sd,
-                self.args.n_mloop_indels_min, self.args.n_mloop_indels_max
+    def sample_modifications(self, bulge_graph: BulgeGraph) -> SampledModifications:
+        """Sample modification counts using either absolute numbers or fractions."""
+
+        def _total_length(ntype: NodeType) -> int:
+            total = 0
+            for _, coords in bulge_graph.get_nodes_by_type(ntype):
+                total += self._get_nucleotide_size(ntype, coords)
+            return total
+
+        def _fraction_count(mean, sd, mn, mx, total):
+            frac = self._sample_truncated_normal_float(mean, sd, mn, mx)
+            return int(round(total * frac))
+
+        # Stem sampling
+        if self.args.f_stem_indels_mean is not None:
+            stem_total = _total_length(NodeType.STEM)
+            n_stem = _fraction_count(
+                self.args.f_stem_indels_mean,
+                self.args.f_stem_indels_sd,
+                self.args.f_stem_indels_min,
+                self.args.f_stem_indels_max,
+                stem_total,
             )
+        else:
+            n_stem = self._sample_truncated_normal(
+                self.args.n_stem_indels_mean,
+                self.args.n_stem_indels_sd,
+                self.args.n_stem_indels_min,
+                self.args.n_stem_indels_max,
+            )
+
+        # Hairpin loop sampling
+        if self.args.f_hloop_indels_mean is not None:
+            total = _total_length(NodeType.HAIRPIN)
+            n_hloop = _fraction_count(
+                self.args.f_hloop_indels_mean,
+                self.args.f_hloop_indels_sd,
+                self.args.f_hloop_indels_min,
+                self.args.f_hloop_indels_max,
+                total,
+            )
+        else:
+            n_hloop = self._sample_truncated_normal(
+                self.args.n_hloop_indels_mean,
+                self.args.n_hloop_indels_sd,
+                self.args.n_hloop_indels_min,
+                self.args.n_hloop_indels_max,
+            )
+
+        # Internal loop sampling
+        if self.args.f_iloop_indels_mean is not None:
+            total = _total_length(NodeType.INTERNAL)
+            n_iloop = _fraction_count(
+                self.args.f_iloop_indels_mean,
+                self.args.f_iloop_indels_sd,
+                self.args.f_iloop_indels_min,
+                self.args.f_iloop_indels_max,
+                total,
+            )
+        else:
+            n_iloop = self._sample_truncated_normal(
+                self.args.n_iloop_indels_mean,
+                self.args.n_iloop_indels_sd,
+                self.args.n_iloop_indels_min,
+                self.args.n_iloop_indels_max,
+            )
+
+        # Bulge loop sampling
+        if self.args.f_bulge_indels_mean is not None:
+            total = _total_length(NodeType.BULGE)
+            n_bulge = _fraction_count(
+                self.args.f_bulge_indels_mean,
+                self.args.f_bulge_indels_sd,
+                self.args.f_bulge_indels_min,
+                self.args.f_bulge_indels_max,
+                total,
+            )
+        else:
+            n_bulge = self._sample_truncated_normal(
+                self.args.n_bulge_indels_mean,
+                self.args.n_bulge_indels_sd,
+                self.args.n_bulge_indels_min,
+                self.args.n_bulge_indels_max,
+            )
+
+        # Multi loop sampling
+        if self.args.f_mloop_indels_mean is not None:
+            total = _total_length(NodeType.MULTI)
+            n_mloop = _fraction_count(
+                self.args.f_mloop_indels_mean,
+                self.args.f_mloop_indels_sd,
+                self.args.f_mloop_indels_min,
+                self.args.f_mloop_indels_max,
+                total,
+            )
+        else:
+            n_mloop = self._sample_truncated_normal(
+                self.args.n_mloop_indels_mean,
+                self.args.n_mloop_indels_sd,
+                self.args.n_mloop_indels_min,
+                self.args.n_mloop_indels_max,
+            )
+
+        return SampledModifications(
+            n_stem_indels=n_stem,
+            n_hloop_indels=n_hloop,
+            n_iloop_indels=n_iloop,
+            n_bulge_indels=n_bulge,
+            n_mloop_indels=n_mloop,
         )
     
     def _sample_truncated_normal(self, mean: float, sd: float, min_val: int, max_val: int) -> int:
         """Sample from a truncated normal distribution."""
         if min_val >= max_val:
             return min_val
-        
+
         a, b = (min_val - mean) / sd, (max_val - mean) / sd
         sample = truncnorm.rvs(a, b, loc=mean, scale=sd)
         return int(round(sample))
+
+    def _sample_truncated_normal_float(self, mean: float, sd: float, min_val: float, max_val: float) -> float:
+        """Sample a float from a truncated normal distribution."""
+        if min_val >= max_val:
+            return min_val
+
+        a, b = (min_val - mean) / sd, (max_val - mean) / sd
+        return float(truncnorm.rvs(a, b, loc=mean, scale=sd))
     
     def apply_modifications(self, sequence: str, structure: str, 
                           bulge_graph: BulgeGraph, 

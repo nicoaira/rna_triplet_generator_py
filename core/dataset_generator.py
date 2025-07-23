@@ -114,7 +114,7 @@ class DatasetGenerator:
         anchor_graph = self.bulge_parser.parse_structure(anchor_struct)
         
         # Step 3: Sample modifications and generate positive
-        sampled_mods = self.modification_engine.sample_modifications()
+        sampled_mods = self.modification_engine.sample_modifications(anchor_graph)
         pos_seq, pos_struct, mod_counts = self.modification_engine.apply_modifications(
             anchor_seq, anchor_struct, anchor_graph, sampled_mods
         )
