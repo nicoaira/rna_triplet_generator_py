@@ -8,8 +8,8 @@ from typing import Dict, List, Tuple, Optional
 from scipy.stats import truncnorm
 
 from .models import (
-    BulgeGraph, NodeType, ModificationType, ModificationCounts, 
-    SampledModifications, classify_node
+    BulgeGraph, NodeType, ModificationType, ModificationCounts,
+    SampledModifications, ActionCounts, classify_node
 )
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ class ModificationEngine:
         self.node_actions = {}
         # Track counts by structural element type as modifications are applied
         self.type_mod_counts = ModificationCounts()
+        self.action_counts = ActionCounts()
     
     def _format_bulge_graph_summary(self, bulge_graph: BulgeGraph, sequence: str, structure: str) -> str:
         """Format a detailed summary of the bulge graph state with nodes sorted by first coordinate."""
@@ -180,8 +181,8 @@ class ModificationEngine:
         return float(truncnorm.rvs(a, b, loc=mean, scale=sd))
     
     def apply_modifications(self, sequence: str, structure: str, 
-                          bulge_graph: BulgeGraph, 
-                          sampled_mods: SampledModifications) -> Tuple[str, str, ModificationCounts]:
+                          bulge_graph: BulgeGraph,
+                          sampled_mods: SampledModifications) -> Tuple[str, str, ModificationCounts, ActionCounts]:
         """
         Apply modifications to create a positive sample.
         
@@ -200,6 +201,7 @@ class ModificationEngine:
         self.node_actions = {}
         # Reset type-based modification counters
         self.type_mod_counts = ModificationCounts()
+        self.action_counts = ActionCounts()
         
         # Normalize modification counts if enabled
         if self.args.mod_normalization:
@@ -297,6 +299,7 @@ class ModificationEngine:
         
         # Calculate final modification counts
         mod_counts = self._calculate_modification_counts(bulge_graph)
+        action_counts = self._calculate_action_counts()
         
         logger.debug("=== Modification summary ===")
         logger.debug(f"Total modifications: {mod_counts.total}")
@@ -306,7 +309,7 @@ class ModificationEngine:
         logger.debug(f"Bulge modifications: {mod_counts.bulge}")
         logger.debug(f"Multi loop modifications: {mod_counts.mloop}")
 
-        return pos_seq, pos_struct, mod_counts
+        return pos_seq, pos_struct, mod_counts, action_counts
 
     def _modify_stems(
         self, sequence: str, structure: str, bulge_graph: BulgeGraph
@@ -336,10 +339,14 @@ class ModificationEngine:
             sequence, structure = self._insert_stem_pair(
                 sequence, structure, node_name, coords, bulge_graph
             )
+            self.action_counts.stem_insertions += 1
+            self.action_counts.total_insertions += 1
         else:
             sequence, structure = self._delete_stem_pair(
                 sequence, structure, node_name, coords, bulge_graph
             )
+            self.action_counts.stem_deletions += 1
+            self.action_counts.total_deletions += 1
 
         self.modification_counts[node_name] = (
             self.modification_counts.get(node_name, 0) + 1
@@ -390,10 +397,15 @@ class ModificationEngine:
             node_name, coords, node_type, min_size, max_size
         )
 
+        insert_attr = f"{counter_attr}_insertions"
+        delete_attr = f"{counter_attr}_deletions"
+
         if action == ModificationType.INSERT:
             sequence, structure = self._insert_loop_base(
                 sequence, structure, node_name, coords, bulge_graph
             )
+            setattr(self.action_counts, insert_attr, getattr(self.action_counts, insert_attr) + 1)
+            self.action_counts.total_insertions += 1
         else:
             sequence, structure = self._delete_loop_base(
                 sequence,
@@ -404,6 +416,8 @@ class ModificationEngine:
                 min_size,
                 bulge_graph,
             )
+            setattr(self.action_counts, delete_attr, getattr(self.action_counts, delete_attr) + 1)
+            self.action_counts.total_deletions += 1
 
         self.modification_counts[node_name] = (
             self.modification_counts.get(node_name, 0) + 1
@@ -747,3 +761,20 @@ class ModificationEngine:
             counts.stem + counts.hloop + counts.iloop + counts.bulge + counts.mloop
         )
         return counts
+
+    def _calculate_action_counts(self) -> ActionCounts:
+        """Return insertion and deletion action counts."""
+        return ActionCounts(
+            total_insertions=self.action_counts.total_insertions,
+            total_deletions=self.action_counts.total_deletions,
+            stem_insertions=self.action_counts.stem_insertions,
+            stem_deletions=self.action_counts.stem_deletions,
+            hloop_insertions=self.action_counts.hloop_insertions,
+            hloop_deletions=self.action_counts.hloop_deletions,
+            iloop_insertions=self.action_counts.iloop_insertions,
+            iloop_deletions=self.action_counts.iloop_deletions,
+            bulge_insertions=self.action_counts.bulge_insertions,
+            bulge_deletions=self.action_counts.bulge_deletions,
+            mloop_insertions=self.action_counts.mloop_insertions,
+            mloop_deletions=self.action_counts.mloop_deletions,
+        )
