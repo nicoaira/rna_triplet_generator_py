@@ -116,11 +116,14 @@ class RnaTriplet:
     iloop_modifications: int
     bulge_modifications: int
     mloop_modifications: int
-    total_len_stems: int
-    total_len_hloops: int
-    total_len_iloops: int
-    total_len_bulges: int
-    total_len_mloops: int
+    total_len_stem: int
+    total_len_hloop: int
+    total_len_iloop: int
+    total_len_bulge: int
+    total_len_mloop: int
+    anchor_seq_len: int
+    positive_seq_len: int
+    negative_seq_len: int
     stem_insertions: int
     stem_deletions: int
     hloop_insertions: int
@@ -133,6 +136,24 @@ class RnaTriplet:
     mloop_deletions: int
     total_insertions: int
     total_deletions: int
+    f_stem_modifications: float
+    f_stem_insertions: float
+    f_stem_deletions: float
+    f_hloop_modifications: float
+    f_hloop_insertions: float
+    f_hloop_deletions: float
+    f_iloop_modifications: float
+    f_iloop_insertions: float
+    f_iloop_deletions: float
+    f_bulge_modifications: float
+    f_bulge_insertions: float
+    f_bulge_deletions: float
+    f_mloop_modifications: float
+    f_mloop_insertions: float
+    f_mloop_deletions: float
+    f_total_modifications: float
+    f_total_insertions: float
+    f_total_deletions: float
 
 
 @dataclass

@@ -171,6 +171,13 @@ class DatasetGenerator:
             pos_seq, pos_struct, neg_seq, neg_struct, len(anchor_seq)
         )
         
+        anchor_len = len(anchor_seq)
+        pos_len = len(pos_seq)
+        neg_len = len(neg_seq)
+
+        def _frac(count: int, length: int) -> float:
+            return count / length if length > 0 else 0.0
+
         # Step 6: Create and return the triplet
         return RnaTriplet(
             triplet_id=triplet_id,
@@ -186,11 +193,14 @@ class DatasetGenerator:
             iloop_modifications=mod_counts.iloop,
             bulge_modifications=mod_counts.bulge,
             mloop_modifications=mod_counts.mloop,
-            total_len_stems=stem_len,
-            total_len_hloops=hloop_len,
-            total_len_iloops=iloop_len,
-            total_len_bulges=bulge_len,
-            total_len_mloops=mloop_len,
+            total_len_stem=stem_len,
+            total_len_hloop=hloop_len,
+            total_len_iloop=iloop_len,
+            total_len_bulge=bulge_len,
+            total_len_mloop=mloop_len,
+            anchor_seq_len=anchor_len,
+            positive_seq_len=pos_len,
+            negative_seq_len=neg_len,
             stem_insertions=action_counts.stem_insertions,
             stem_deletions=action_counts.stem_deletions,
             hloop_insertions=action_counts.hloop_insertions,
@@ -202,7 +212,25 @@ class DatasetGenerator:
             mloop_insertions=action_counts.mloop_insertions,
             mloop_deletions=action_counts.mloop_deletions,
             total_insertions=action_counts.total_insertions,
-            total_deletions=action_counts.total_deletions
+            total_deletions=action_counts.total_deletions,
+            f_stem_modifications=_frac(mod_counts.stem, stem_len),
+            f_stem_insertions=_frac(action_counts.stem_insertions, stem_len),
+            f_stem_deletions=_frac(action_counts.stem_deletions, stem_len),
+            f_hloop_modifications=_frac(mod_counts.hloop, hloop_len),
+            f_hloop_insertions=_frac(action_counts.hloop_insertions, hloop_len),
+            f_hloop_deletions=_frac(action_counts.hloop_deletions, hloop_len),
+            f_iloop_modifications=_frac(mod_counts.iloop, iloop_len),
+            f_iloop_insertions=_frac(action_counts.iloop_insertions, iloop_len),
+            f_iloop_deletions=_frac(action_counts.iloop_deletions, iloop_len),
+            f_bulge_modifications=_frac(mod_counts.bulge, bulge_len),
+            f_bulge_insertions=_frac(action_counts.bulge_insertions, bulge_len),
+            f_bulge_deletions=_frac(action_counts.bulge_deletions, bulge_len),
+            f_mloop_modifications=_frac(mod_counts.mloop, mloop_len),
+            f_mloop_insertions=_frac(action_counts.mloop_insertions, mloop_len),
+            f_mloop_deletions=_frac(action_counts.mloop_deletions, mloop_len),
+            f_total_modifications=_frac(mod_counts.total, anchor_len),
+            f_total_insertions=_frac(action_counts.total_insertions, anchor_len),
+            f_total_deletions=_frac(action_counts.total_deletions, anchor_len),
         )
     
     def _generate_anchor(self) -> tuple[str, str]:
