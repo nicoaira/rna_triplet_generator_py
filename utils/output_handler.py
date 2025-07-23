@@ -98,7 +98,9 @@ class OutputHandler:
                 'triplet_id', 'anchor_seq', 'anchor_structure',
                 'positive_seq', 'positive_structure', 'negative_seq', 'negative_structure',
                 'total_modifications', 'stem_modifications', 'hloop_modifications',
-                'iloop_modifications', 'bulge_modifications', 'mloop_modifications'
+                'iloop_modifications', 'bulge_modifications', 'mloop_modifications',
+                'total_len_stems', 'total_len_hloops', 'total_len_iloops',
+                'total_len_bulges', 'total_len_mloops'
             ]
             
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -118,7 +120,12 @@ class OutputHandler:
                     'hloop_modifications': triplet.hloop_modifications,
                     'iloop_modifications': triplet.iloop_modifications,
                     'bulge_modifications': triplet.bulge_modifications,
-                    'mloop_modifications': triplet.mloop_modifications
+                    'mloop_modifications': triplet.mloop_modifications,
+                    'total_len_stems': triplet.total_len_stems,
+                    'total_len_hloops': triplet.total_len_hloops,
+                    'total_len_iloops': triplet.total_len_iloops,
+                    'total_len_bulges': triplet.total_len_bulges,
+                    'total_len_mloops': triplet.total_len_mloops
                 })
     
     def _save_metadata(self, metadata, file_path: Path) -> None:
