@@ -189,8 +189,6 @@ def parse_arguments() -> argparse.Namespace:
                            help="Number of parallel workers")
     perf_group.add_argument("--output_dir", type=str, default="output",
                            help="Directory to save output CSV, metadata, etc.")
-    perf_group.add_argument("--batch_size", type=int, default=64,
-                           help="Number of triplets to generate per worker batch")
     
     # Visualization
     viz_group = parser.add_argument_group("Visualization")
