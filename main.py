@@ -55,7 +55,7 @@ def main() -> int:
         # Generate plots if requested
         if args.plot:
             logger.info("Generating structure plots...")
-            plot_manager.plot_triplets(triplets)
+            plot_manager.plot_triplets_stratified(triplets)
             # Also generate some individual structure plots for detailed view
             plot_manager.plot_sample_structures(triplets, sample_size=3)
         
