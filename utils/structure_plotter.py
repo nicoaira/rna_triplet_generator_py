@@ -102,8 +102,10 @@ class RnartistCorePlotter:
             
             # Combine images using montage if available
             if self.montage_available:
-                self._combine_images_with_montage([anchor_png, positive_png, negative_png], 
-                                                output_path)
+                self._combine_images_with_montage_and_annotations(
+                    [anchor_png, positive_png, negative_png], 
+                    output_path, triplet
+                )
             else:
                 # If montage not available, just copy the anchor image as fallback
                 shutil.copy2(anchor_png, output_path)
@@ -165,8 +167,8 @@ class RnartistCorePlotter:
         anchor_block = f'''rnartist {{
   png {{
     path = "{temp_dir}"
-    width = 500.0
-    height = 500.0
+    width = 600.0
+    height = 600.0
   }}
   ss {{
     bn {{
@@ -188,8 +190,8 @@ class RnartistCorePlotter:
         positive_block = f'''rnartist {{
   png {{
     path = "{temp_dir}"
-    width = 500.0
-    height = 500.0
+    width = 600.0
+    height = 600.0
   }}
   ss {{
     bn {{
@@ -211,8 +213,8 @@ class RnartistCorePlotter:
         negative_block = f'''rnartist {{
   png {{
     path = "{temp_dir}"
-    width = 500.0
-    height = 500.0
+    width = 600.0
+    height = 600.0
   }}
   ss {{
     bn {{
@@ -239,8 +241,8 @@ class RnartistCorePlotter:
         return f'''rnartist {{
   png {{
     path = "{temp_dir}"
-    width = 500.0
-    height = 500.0
+    width = 600.0
+    height = 600.0
   }}
   ss {{
     bn {{
@@ -272,6 +274,102 @@ class RnartistCorePlotter:
                 logger.error(f"montage failed: {result.stderr}")
         except subprocess.TimeoutExpired:
             logger.error("montage timed out")
+    
+    def _combine_images_with_montage_and_annotations(self, image_paths: List[Path], 
+                                                   output_path: Path, triplet) -> None:
+        """Combine multiple images with titles and modification info using ImageMagick."""
+        try:
+            # Create annotated versions of each image with titles and modification info
+            annotated_paths = []
+            
+            # Anchor image - no modifications
+            anchor_annotated = image_paths[0].parent / f"annotated_{image_paths[0].name}"
+            self._add_annotations_to_image(
+                image_paths[0], anchor_annotated, 
+                "Anchor", triplet, is_anchor=True
+            )
+            annotated_paths.append(anchor_annotated)
+            
+            # Positive image - with modifications
+            positive_annotated = image_paths[1].parent / f"annotated_{image_paths[1].name}"
+            self._add_annotations_to_image(
+                image_paths[1], positive_annotated, 
+                "Positive", triplet, is_anchor=False
+            )
+            annotated_paths.append(positive_annotated)
+            
+            # Negative image - no modifications
+            negative_annotated = image_paths[2].parent / f"annotated_{image_paths[2].name}"
+            self._add_annotations_to_image(
+                image_paths[2], negative_annotated, 
+                "Negative", triplet, is_anchor=True
+            )
+            annotated_paths.append(negative_annotated)
+            
+            # Combine annotated images
+            cmd = ['montage'] + [str(p) for p in annotated_paths] + [
+                '-tile', '3x1',
+                '-geometry', '+20+20',
+                '-background', 'white',
+                str(output_path)
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                logger.error(f"montage failed: {result.stderr}")
+                
+        except subprocess.TimeoutExpired:
+            logger.error("montage timed out")
+        except Exception as e:
+            logger.error(f"Error in montage with annotations: {e}")
+    
+    def _add_annotations_to_image(self, input_path: Path, output_path: Path, 
+                                structure_type: str, triplet, is_anchor: bool) -> None:
+        """Add title and modification info to an image using ImageMagick convert."""
+        try:
+            # Create title text
+            title = f"Triplet {triplet.triplet_id} - {structure_type}"
+            
+            # Create modification info text
+            if is_anchor:
+                mod_info = ""
+            else:
+                mod_lines = [
+                    f"Total: {triplet.total_modifications}",
+                    f"Stem: {triplet.stem_modifications}",
+                    f"Hairpin: {triplet.hloop_modifications}",
+                    f"Internal: {triplet.iloop_modifications}",
+                    f"Bulge: {triplet.bulge_modifications}",
+                    f"Multi: {triplet.mloop_modifications}"
+                ]
+                mod_info = " | ".join(mod_lines)
+            
+            # Use ImageMagick convert to add text annotations
+            cmd = [
+                'convert', str(input_path),
+                '-background', 'white',
+                '-fill', 'black',
+                '-font', 'Arial',
+                '-pointsize', '16',
+                '-gravity', 'North',
+                '-splice', '0x80',  # Add space at top for title
+                '-annotate', '+0+10', title,
+                '-pointsize', '12',
+                '-gravity', 'South',
+                '-splice', '0x60',  # Add space at bottom for mod info
+                '-annotate', '+0+10', mod_info,
+                str(output_path)
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                logger.error(f"convert failed: {result.stderr}")
+                # Fallback: just copy the original
+                shutil.copy2(input_path, output_path)
+                
+        except Exception as e:
+            logger.error(f"Error adding annotations: {e}")
+            # Fallback: just copy the original
+            shutil.copy2(input_path, output_path)
 
 
 class StructurePlotManager:
