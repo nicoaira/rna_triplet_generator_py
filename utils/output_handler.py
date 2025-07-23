@@ -100,7 +100,13 @@ class OutputHandler:
                 'total_modifications', 'stem_modifications', 'hloop_modifications',
                 'iloop_modifications', 'bulge_modifications', 'mloop_modifications',
                 'total_len_stems', 'total_len_hloops', 'total_len_iloops',
-                'total_len_bulges', 'total_len_mloops'
+                'total_len_bulges', 'total_len_mloops',
+                'stem_insertions', 'stem_deletions',
+                'hloop_insertions', 'hloop_deletions',
+                'iloop_insertions', 'iloop_deletions',
+                'bulge_insertions', 'bulge_deletions',
+                'mloop_insertions', 'mloop_deletions',
+                'total_insertions', 'total_deletions'
             ]
             
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -125,7 +131,19 @@ class OutputHandler:
                     'total_len_hloops': triplet.total_len_hloops,
                     'total_len_iloops': triplet.total_len_iloops,
                     'total_len_bulges': triplet.total_len_bulges,
-                    'total_len_mloops': triplet.total_len_mloops
+                    'total_len_mloops': triplet.total_len_mloops,
+                    'stem_insertions': triplet.stem_insertions,
+                    'stem_deletions': triplet.stem_deletions,
+                    'hloop_insertions': triplet.hloop_insertions,
+                    'hloop_deletions': triplet.hloop_deletions,
+                    'iloop_insertions': triplet.iloop_insertions,
+                    'iloop_deletions': triplet.iloop_deletions,
+                    'bulge_insertions': triplet.bulge_insertions,
+                    'bulge_deletions': triplet.bulge_deletions,
+                    'mloop_insertions': triplet.mloop_insertions,
+                    'mloop_deletions': triplet.mloop_deletions,
+                    'total_insertions': triplet.total_insertions,
+                    'total_deletions': triplet.total_deletions
                 })
     
     def _save_metadata(self, metadata, file_path: Path) -> None:

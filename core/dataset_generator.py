@@ -159,7 +159,7 @@ class DatasetGenerator:
         
         # Step 3: Sample modifications and generate positive
         sampled_mods = self.modification_engine.sample_modifications(anchor_graph)
-        pos_seq, pos_struct, mod_counts = self.modification_engine.apply_modifications(
+        pos_seq, pos_struct, mod_counts, action_counts = self.modification_engine.apply_modifications(
             anchor_seq, anchor_struct, anchor_graph, sampled_mods
         )
         
@@ -190,7 +190,19 @@ class DatasetGenerator:
             total_len_hloops=hloop_len,
             total_len_iloops=iloop_len,
             total_len_bulges=bulge_len,
-            total_len_mloops=mloop_len
+            total_len_mloops=mloop_len,
+            stem_insertions=action_counts.stem_insertions,
+            stem_deletions=action_counts.stem_deletions,
+            hloop_insertions=action_counts.hloop_insertions,
+            hloop_deletions=action_counts.hloop_deletions,
+            iloop_insertions=action_counts.iloop_insertions,
+            iloop_deletions=action_counts.iloop_deletions,
+            bulge_insertions=action_counts.bulge_insertions,
+            bulge_deletions=action_counts.bulge_deletions,
+            mloop_insertions=action_counts.mloop_insertions,
+            mloop_deletions=action_counts.mloop_deletions,
+            total_insertions=action_counts.total_insertions,
+            total_deletions=action_counts.total_deletions
         )
     
     def _generate_anchor(self) -> tuple[str, str]:

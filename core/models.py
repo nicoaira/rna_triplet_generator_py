@@ -84,6 +84,23 @@ class SampledModifications:
 
 
 @dataclass
+class ActionCounts:
+    """Tracks counts of insertion and deletion actions by structure type."""
+    total_insertions: int = 0
+    total_deletions: int = 0
+    stem_insertions: int = 0
+    stem_deletions: int = 0
+    hloop_insertions: int = 0
+    hloop_deletions: int = 0
+    iloop_insertions: int = 0
+    iloop_deletions: int = 0
+    bulge_insertions: int = 0
+    bulge_deletions: int = 0
+    mloop_insertions: int = 0
+    mloop_deletions: int = 0
+
+
+@dataclass
 class RnaTriplet:
     """Represents a complete RNA triplet with anchor, positive, and negative samples."""
     triplet_id: int
@@ -104,6 +121,18 @@ class RnaTriplet:
     total_len_iloops: int
     total_len_bulges: int
     total_len_mloops: int
+    stem_insertions: int
+    stem_deletions: int
+    hloop_insertions: int
+    hloop_deletions: int
+    iloop_insertions: int
+    iloop_deletions: int
+    bulge_insertions: int
+    bulge_deletions: int
+    mloop_insertions: int
+    mloop_deletions: int
+    total_insertions: int
+    total_deletions: int
 
 
 @dataclass
