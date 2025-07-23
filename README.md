@@ -86,7 +86,6 @@ python main.py \
     --mod_normalization \
     --normalization_len 100 \
     --num_workers 8 \
-    --batch_size 64 \
     --output_dir output_python \
     --split \
     --train_fraction 0.8 \
@@ -135,7 +134,7 @@ python main.py \
   --appending_event_probability 0 \
   --output_dir mod-counting-dataset \
   --num_workers 16 \
-  --batch_size 32
+
 ```
 
 ### Key Parameters
@@ -231,7 +230,6 @@ This Python version offers several improvements over the original Rust implement
 ## Performance Notes
 
 - Use `--num_workers > 1` for parallel processing on multi-core systems
-- Adjust `--batch_size` based on available memory
 - Enable `--debug` for detailed execution logging
 - The ViennaRNA dependency is required for RNA folding functionality
 
