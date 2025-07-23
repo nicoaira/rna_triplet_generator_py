@@ -49,6 +49,14 @@ def parse_arguments() -> argparse.Namespace:
                            help="Mean for truncated normal distribution of stem modifications")
     stem_group.add_argument("--n_stem_indels_sd", type=float, default=1.0,
                            help="Standard deviation for truncated normal distribution of stem modifications")
+    stem_group.add_argument("--f_stem_indels_min", type=float, default=None,
+                           help="Minimum fraction of stem positions to modify")
+    stem_group.add_argument("--f_stem_indels_max", type=float, default=None,
+                           help="Maximum fraction of stem positions to modify")
+    stem_group.add_argument("--f_stem_indels_mean", type=float, default=None,
+                           help="Mean for truncated normal distribution of stem modification fraction")
+    stem_group.add_argument("--f_stem_indels_sd", type=float, default=None,
+                           help="Standard deviation for truncated normal distribution of stem modification fraction")
     stem_group.add_argument("--stem_min_size", type=int, default=2,
                            help="Minimum stem size")
     stem_group.add_argument("--stem_max_size", type=int, default=10,
@@ -68,6 +76,14 @@ def parse_arguments() -> argparse.Namespace:
                            help="Mean for truncated normal distribution of hairpin loop modifications")
     loop_group.add_argument("--n_hloop_indels_sd", type=float, default=1.0,
                            help="Standard deviation for truncated normal distribution of hairpin loop modifications")
+    loop_group.add_argument("--f_hloop_indels_min", type=float, default=None,
+                           help="Minimum fraction of hairpin loop positions to modify")
+    loop_group.add_argument("--f_hloop_indels_max", type=float, default=None,
+                           help="Maximum fraction of hairpin loop positions to modify")
+    loop_group.add_argument("--f_hloop_indels_mean", type=float, default=None,
+                           help="Mean for truncated normal distribution of hairpin loop modification fraction")
+    loop_group.add_argument("--f_hloop_indels_sd", type=float, default=None,
+                           help="Standard deviation for truncated normal distribution of hairpin loop modification fraction")
     loop_group.add_argument("--hloop_min_size", type=int, default=3,
                            help="Minimum hairpin loop size")
     loop_group.add_argument("--hloop_max_size", type=int, default=10,
@@ -84,6 +100,14 @@ def parse_arguments() -> argparse.Namespace:
                            help="Mean for truncated normal distribution of internal loop modifications")
     loop_group.add_argument("--n_iloop_indels_sd", type=float, default=1.0,
                            help="Standard deviation for truncated normal distribution of internal loop modifications")
+    loop_group.add_argument("--f_iloop_indels_min", type=float, default=None,
+                           help="Minimum fraction of internal loop positions to modify")
+    loop_group.add_argument("--f_iloop_indels_max", type=float, default=None,
+                           help="Maximum fraction of internal loop positions to modify")
+    loop_group.add_argument("--f_iloop_indels_mean", type=float, default=None,
+                           help="Mean for truncated normal distribution of internal loop modification fraction")
+    loop_group.add_argument("--f_iloop_indels_sd", type=float, default=None,
+                           help="Standard deviation for truncated normal distribution of internal loop modification fraction")
     loop_group.add_argument("--iloop_min_size", type=int, default=2,
                            help="Minimum internal loop size")
     loop_group.add_argument("--iloop_max_size", type=int, default=10,
@@ -100,6 +124,14 @@ def parse_arguments() -> argparse.Namespace:
                            help="Mean for truncated normal distribution of bulge modifications")
     loop_group.add_argument("--n_bulge_indels_sd", type=float, default=1.0,
                            help="Standard deviation for truncated normal distribution of bulge modifications")
+    loop_group.add_argument("--f_bulge_indels_min", type=float, default=None,
+                           help="Minimum fraction of bulge positions to modify")
+    loop_group.add_argument("--f_bulge_indels_max", type=float, default=None,
+                           help="Maximum fraction of bulge positions to modify")
+    loop_group.add_argument("--f_bulge_indels_mean", type=float, default=None,
+                           help="Mean for truncated normal distribution of bulge modification fraction")
+    loop_group.add_argument("--f_bulge_indels_sd", type=float, default=None,
+                           help="Standard deviation for truncated normal distribution of bulge modification fraction")
     loop_group.add_argument("--bulge_min_size", type=int, default=1,
                            help="Minimum bulge loop size")
     loop_group.add_argument("--bulge_max_size", type=int, default=1,
@@ -116,6 +148,14 @@ def parse_arguments() -> argparse.Namespace:
                            help="Mean for truncated normal distribution of multi loop modifications")
     loop_group.add_argument("--n_mloop_indels_sd", type=float, default=1.0,
                            help="Standard deviation for truncated normal distribution of multi loop modifications")
+    loop_group.add_argument("--f_mloop_indels_min", type=float, default=None,
+                           help="Minimum fraction of multi loop positions to modify")
+    loop_group.add_argument("--f_mloop_indels_max", type=float, default=None,
+                           help="Maximum fraction of multi loop positions to modify")
+    loop_group.add_argument("--f_mloop_indels_mean", type=float, default=None,
+                           help="Mean for truncated normal distribution of multi loop modification fraction")
+    loop_group.add_argument("--f_mloop_indels_sd", type=float, default=None,
+                           help="Standard deviation for truncated normal distribution of multi loop modification fraction")
     loop_group.add_argument("--mloop_min_size", type=int, default=2,
                            help="Minimum multi loop size")
     loop_group.add_argument("--mloop_max_size", type=int, default=15,
@@ -176,9 +216,35 @@ def parse_arguments() -> argparse.Namespace:
                             help="Enable detailed timing logs")
     
     args = parser.parse_args()
-    
+
     # Validate arguments
     if args.train_fraction + args.val_fraction > 1.0:
         parser.error("train_fraction + val_fraction cannot exceed 1.0")
-    
+
+    # Prevent mixing of fraction-based and count-based modification parameters
+    def _check_mix(prefix: str, defaults: tuple):
+        f_fields = [getattr(args, f"f_{prefix}_indels_min"),
+                    getattr(args, f"f_{prefix}_indels_max"),
+                    getattr(args, f"f_{prefix}_indels_mean"),
+                    getattr(args, f"f_{prefix}_indels_sd")]
+        n_fields = [getattr(args, f"n_{prefix}_indels_min"),
+                    getattr(args, f"n_{prefix}_indels_max"),
+                    getattr(args, f"n_{prefix}_indels_mean"),
+                    getattr(args, f"n_{prefix}_indels_sd")]
+
+        use_fraction = any(v is not None for v in f_fields)
+        if use_fraction:
+            # ensure all fraction parameters provided
+            if not all(v is not None for v in f_fields):
+                parser.error(f"All f_{prefix}_indels_* parameters must be provided when using fraction mode")
+            # ensure no n parameters were altered from defaults
+            if any(n != d for n, d in zip(n_fields, defaults)):
+                parser.error(f"Cannot mix f_{prefix}_indels_* with n_{prefix}_indels_* parameters")
+
+    _check_mix("stem", (0, 0, 3.0, 1.0))
+    _check_mix("hloop", (0, 0, 3.0, 1.0))
+    _check_mix("iloop", (0, 0, 3.0, 1.0))
+    _check_mix("bulge", (0, 0, 3.0, 1.0))
+    _check_mix("mloop", (0, 0, 3.0, 1.0))
+
     return args
