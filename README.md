@@ -94,6 +94,50 @@ python main.py \
     --debug
 ```
 
+### Example: Fraction-Based Modification Sampling
+
+The following command generates a 10,000 structure dataset where the number of
+modifications in each structural element is sampled as a fraction of the element
+length. All insertions and deletions are normalized by the length of the anchor
+sequence.
+
+```bash
+python main.py \
+  --num_structures 10000 \
+  --seq_min_len 40 \
+  --seq_max_len 300 \
+  --seq_len_distribution norm \
+  --seq_len_mean 120 \
+  --seq_len_sd 70 \
+  --mod_normalization \
+  --normalization_len 50 \
+  --neg_len_variation 20 \
+  --f_stem_indels_min 0 --f_stem_indels_max 0.4 \
+  --f_stem_indels_mean 0.1 --f_stem_indels_sd 0.05 \
+  --stem_min_size 2 --stem_max_size 15 \
+  --same_stem_max_n_mod 5 \
+  --f_hloop_indels_min 0 --f_hloop_indels_max 0.5 \
+  --f_hloop_indels_mean 0.1 --f_hloop_indels_sd 0.05 \
+  --hloop_min_size 3 --hloop_max_size 15 \
+  --same_hloop_max_n_mod 5 \
+  --f_iloop_indels_min 0 --f_iloop_indels_max 0.6 \
+  --f_iloop_indels_mean 0.2 --f_iloop_indels_sd 0.05 \
+  --iloop_min_size 0 --iloop_max_size 15 \
+  --same_iloop_max_n_mod 5 \
+  --f_mloop_indels_min 0 --f_mloop_indels_max 0.7 \
+  --f_mloop_indels_mean 0.2 --f_mloop_indels_sd 0.05 \
+  --mloop_min_size 0 --mloop_max_size 15 \
+  --same_mloop_max_n_mod 5 \
+  --f_bulge_indels_min 0 --f_bulge_indels_max 0.7 \
+  --f_bulge_indels_mean 0.2 --f_bulge_indels_sd 0.05 \
+  --bulge_min_size 0 --bulge_max_size 15 \
+  --same_bulge_max_n_mod 5 \
+  --appending_event_probability 0 \
+  --output_dir mod-counting-dataset \
+  --num_workers 16 \
+  --batch_size 32
+```
+
 ### Key Parameters
 
 - `--num_structures`: Number of triplets to generate
@@ -141,15 +185,38 @@ python main.py \
 
 ## Output Format
 
-The generator produces CSV files with the following columns:
+The generator saves a CSV file containing one row per RNA triplet. The most
+important columns are:
 
-- `triplet_id`: Unique identifier
-- `anchor_seq/anchor_structure`: Original sequence and structure
-- `positive_seq/positive_structure`: Modified sequence and structure
-- `negative_seq/negative_structure`: Shuffled sequence and structure
-- `*_modifications`: Counts of modifications by structural element type
+- `triplet_id` – unique identifier for the triplet
+- `anchor_seq` / `anchor_structure` – original sequence and predicted structure
+- `positive_seq` / `positive_structure` – sequence after applying insertions or
+  deletions
+- `negative_seq` / `negative_structure` – dinucleotide shuffled sequence and its
+  structure
+- `total_modifications` – total number of edit operations performed on the
+  anchor
+- `*_modifications` – per-element modification counts for stems, hairpins,
+  internal loops, bulges and multi-loops
+- `total_len_*` – total nucleotide length of each structural element on the
+  anchor sequence
+- `*_insertions` / `*_deletions` – counts of individual insertion and deletion
+  events for each element
+- `f_*` columns – fractional versions of the counts, normalized by the
+  respective element length or by the full anchor length
 
-Metadata is saved as JSON and included as a comment in CSV files.
+Metadata describing the parameters used for generation is stored as a JSON file
+and also embedded as a comment on the first line of the CSV.
+
+### Structure Length Calculation
+
+Lengths for individual structural elements are derived from the bulge graph
+representation produced by `forgi`. For stems, hairpins, bulges and multi loops
+the length is simply `end - start + 1`. Internal loops consist of two unpaired
+sections, so their length is the sum of the left and right segment sizes
+(`left_end - left_start + right_end - right_start + 2`). These lengths are
+recorded in the `total_len_*` columns and are used when computing the fractional
+`f_*` metrics.
 
 ## Comparison with Rust Version
 
