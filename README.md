@@ -10,7 +10,6 @@ A modular Python implementation of the RNA triplet generator for creating machin
 - **Structural Modifications**: Apply insertions/deletions to stems, hairpin loops, internal loops, bulges, and multi-loops
 - **Negative Sample Generation**: Dinucleotide shuffling to preserve sequence composition
 - **Appending Events**: Optional sequence appending with linkers
-- **Parallel Processing**: Multi-threaded generation for improved performance
 - **Dataset Splitting**: Automatic train/validation split functionality
 - **Comprehensive Logging**: Detailed logging with configurable levels
 
@@ -85,8 +84,6 @@ python main.py \
     --n_hloop_indels_max 2 \
     --mod_normalization \
     --normalization_len 100 \
-    --num_workers 8 \
-    --batch_size 64 \
     --output_dir output_python \
     --split \
     --train_fraction 0.8 \
@@ -134,8 +131,7 @@ python main.py \
   --same_bulge_max_n_mod 5 \
   --appending_event_probability 0 \
   --output_dir mod-counting-dataset \
-  --num_workers 16 \
-  --batch_size 32
+
 ```
 
 ### Key Parameters
@@ -145,7 +141,6 @@ python main.py \
 - `--seq_len_distribution`: Length distribution (unif/norm)
 - `--n_*_indels_min/max`: Modification count ranges for different structural elements
 - `--mod_normalization`: Scale modifications by sequence length
-- `--num_workers`: Number of parallel workers
 - `--split`: Enable train/validation splitting
 - `--debug`: Enable debug logging
 
@@ -173,7 +168,7 @@ python main.py \
 
 5. **dataset_generator.py**: Main orchestration
    - `DatasetGenerator`: Coordinates all components for triplet generation
-   - Supports both sequential and parallel processing
+   - Generates triplets sequentially
 
 ### Utility Modules
 
@@ -230,8 +225,6 @@ This Python version offers several improvements over the original Rust implement
 
 ## Performance Notes
 
-- Use `--num_workers > 1` for parallel processing on multi-core systems
-- Adjust `--batch_size` based on available memory
 - Enable `--debug` for detailed execution logging
 - The ViennaRNA dependency is required for RNA folding functionality
 

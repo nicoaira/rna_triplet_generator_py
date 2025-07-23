@@ -3,7 +3,6 @@ Main dataset generator that orchestrates the creation of RNA triplets.
 """
 
 import logging
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import List
 from tqdm import tqdm
 
@@ -35,14 +34,9 @@ class DatasetGenerator:
         Returns:
             List of RNA triplets
         """
-        logger.info(f"Generating {self.args.num_structures} triplets using {self.args.num_workers} workers")
-        
-        if self.args.num_workers == 1:
-            # Single-threaded generation
-            return self._generate_sequential()
-        else:
-            # Multi-threaded generation
-            return self._generate_parallel()
+        logger.info(f"Generating {self.args.num_structures} triplets")
+
+        return self._generate_sequential()
     
     def _generate_sequential(self) -> List[RnaTriplet]:
         """Generate triplets sequentially."""
@@ -56,47 +50,6 @@ class DatasetGenerator:
         
         return triplets
     
-    def _generate_parallel(self) -> List[RnaTriplet]:
-        """Generate triplets in parallel using multiprocessing."""
-        triplets = []
-        
-        # Calculate work distribution
-        total_work = self.args.num_structures
-        batch_size = self.args.batch_size
-        num_batches = (total_work + batch_size - 1) // batch_size
-        
-        with tqdm(total=total_work, desc="Generating triplets") as pbar:
-            with ProcessPoolExecutor(max_workers=self.args.num_workers) as executor:
-                # Submit batch jobs
-                future_to_batch = {}
-                
-                for batch_idx in range(num_batches):
-                    start_idx = batch_idx * batch_size
-                    end_idx = min(start_idx + batch_size, total_work)
-                    batch_indices = list(range(start_idx, end_idx))
-                    
-                    future = executor.submit(self._generate_batch, batch_indices)
-                    future_to_batch[future] = batch_idx
-                
-                # Collect results
-                for future in as_completed(future_to_batch):
-                    batch_triplets = future.result()
-                    triplets.extend(batch_triplets)
-                    pbar.update(len(batch_triplets))
-        
-        # Sort by triplet_id to maintain order
-        triplets.sort(key=lambda x: x.triplet_id)
-        return triplets
-    
-    def _generate_batch(self, indices: List[int]) -> List[RnaTriplet]:
-        """Generate a batch of triplets (used in multiprocessing)."""
-        batch_triplets = []
-        
-        for idx in indices:
-            triplet = self._generate_single_triplet(idx)
-            batch_triplets.append(triplet)
-
-        return batch_triplets
 
     def _calculate_structure_lengths(self, bulge_graph) -> tuple[int, int, int, int, int]:
         """Calculate total nucleotide lengths for each structure type on the anchor."""
